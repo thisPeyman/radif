@@ -28,6 +28,13 @@ func openDatabase(path string) (*gorm.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
+	if db.Migrator().HasColumn("orders", "product_id") {
+		for _, table := range []string{"order_items", "order_status_histories", "pilot_events", "orders"} {
+			if err := db.Exec("DROP TABLE IF EXISTS " + table).Error; err != nil {
+				return nil, fmt.Errorf("replace single-product order schema: %w", err)
+			}
+		}
+	}
 
 	if err := db.AutoMigrate(
 		&Admin{},
@@ -35,11 +42,11 @@ func openDatabase(path string) (*gorm.DB, error) {
 		&Shop{},
 		&Product{},
 		&Order{},
+		&OrderItem{},
 		&OrderStatusHistory{},
 		&PilotEvent{},
 	); err != nil {
 		return nil, fmt.Errorf("migrate database: %w", err)
 	}
-
 	return db, nil
 }

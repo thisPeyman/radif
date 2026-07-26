@@ -24,7 +24,7 @@ The primary success condition is that a repeat order can be created and its link
 - Seeded shops, products, product images, and payment instructions
 - Admin login and session management
 - Switching between an admin's shops
-- Fast order creation with an editable amount
+- Fast multi-item order creation with quantities and an editable total amount
 - Optional Instagram username and internal note
 - Unique secret customer link for every order
 - One-action order creation and link copying
@@ -185,7 +185,6 @@ One owner column is sufficient because multi-admin collaboration is outside the 
 - ID used to produce the visible order code
 - Secret customer token
 - Shop ID
-- Product ID
 - Amount in toman
 - Instagram username
 - Internal note
@@ -199,6 +198,15 @@ One owner column is sufficient because multi-admin collaboration is outside the 
 - Shipment tracking code
 - Customer submission timestamp
 - Created and updated timestamps
+
+### `order_items`
+
+- ID
+- Order ID
+- Product ID
+- Quantity
+- Product unit price at order creation
+- Created timestamp
 
 ### `order_status_history`
 
@@ -324,7 +332,7 @@ The current shop stays visible near the top of order screens. Switching shops is
 The shortest repeat flow is:
 
 ```text
-Select product
+Select one or more products and quantities
 → amount is prefilled
 → tap “ساخت و کپی لینک”
 ```
@@ -332,8 +340,8 @@ Select product
 Requirements:
 
 - Remember the current shop.
-- Present products as compact, image-backed choices.
-- Prefill the default price and allow editing.
+- Present products as compact, image-backed multi-select choices with quantity controls.
+- Prefill the total from selected products and quantities, and allow editing.
 - Keep Instagram username and internal note collapsed or visually secondary.
 - Create the order and attempt clipboard copy from one primary action.
 - If clipboard access fails, show the link and an obvious retry button.
@@ -461,7 +469,7 @@ Acceptance check: the health endpoint responds, Vite development works, and a pr
 ### M2: Database and Seed Data
 
 - Configure GORM and SQLite pragmas.
-- Add the seven pilot models and relationships.
+- Add the eight pilot models and relationships.
 - Run `AutoMigrate` during controlled application startup.
 - Add an idempotent seed subcommand for admins, shops, and products.
 - Store seed credentials in environment variables rather than source files.
@@ -493,7 +501,7 @@ Acceptance check: login and navigation work at 320px through desktop without int
 ### M5: Fast Order Creation
 
 - Load active products for the current shop.
-- Build product selection and prefilled amount editing.
+- Build multi-product selection, quantity controls, and prefilled total editing.
 - Add optional Instagram username and internal note.
 - Create a secret token and initial history entry in one transaction.
 - Implement “ساخت و کپی لینک” and clipboard fallback.
@@ -567,7 +575,7 @@ The smallest meaningful end-to-end check covers:
 2. Admin creates an order.
 3. A unique customer token and visible order code are generated.
 4. Customer opens the link.
-5. Customer sees the correct shop, product, amount, and payment instructions.
+5. Customer sees the correct shop, products, amount, and payment instructions.
 6. Customer submits valid delivery details and a receipt.
 7. Order remains `waiting_payment`.
 8. Admin views the protected receipt and marks the order paid.

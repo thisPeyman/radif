@@ -51,8 +51,7 @@ type Order struct {
 	SecretToken          string `gorm:"not null;uniqueIndex"`
 	ShopID               uint   `gorm:"not null;index"`
 	Shop                 Shop
-	ProductID            uint `gorm:"not null;index"`
-	Product              Product
+	Items                []OrderItem
 	Amount               int64 `gorm:"not null"`
 	InstagramUsername    string
 	InternalNote         string
@@ -68,6 +67,17 @@ type Order struct {
 	CustomerSubmittedAt  *time.Time
 	CreatedAt            time.Time
 	UpdatedAt            time.Time
+}
+
+type OrderItem struct {
+	ID        uint `gorm:"primaryKey"`
+	OrderID   uint `gorm:"not null;uniqueIndex:idx_order_items_order_product"`
+	Order     Order
+	ProductID uint `gorm:"not null;uniqueIndex:idx_order_items_order_product"`
+	Product   Product
+	Quantity  int   `gorm:"not null"`
+	UnitPrice int64 `gorm:"not null"`
+	CreatedAt time.Time
 }
 
 type OrderStatusHistory struct {

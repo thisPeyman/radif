@@ -44,6 +44,11 @@ type Product = {
   shortDescription?: string;
 };
 
+type SelectedItem = {
+  product: Product;
+  quantity: number;
+};
+
 type CreatedOrder = {
   id: number;
   orderCode: string;
@@ -349,7 +354,7 @@ function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; onBusyChange: (bu
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
-  const [selected, setSelected] = useState<Product | null>(null);
+  const [items, setItems] = useState<SelectedItem[]>([]);
   const [amount, setAmount] = useState("");
   const [amountFocused, setAmountFocused] = useState(false);
   const [instagram, setInstagram] = useState("");
@@ -384,10 +389,20 @@ function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; onBusyChange: (bu
 
   useEffect(loadProducts, [shop.id]);
 
-  function chooseProduct(product: Product) {
-    setSelected(product);
-    setAmount(String(product.defaultPrice));
+  function updateItems(next: SelectedItem[]) {
+    setItems(next);
+    setAmount(String(next.reduce((total, item) => total + item.product.defaultPrice * item.quantity, 0)));
+    setAmountError("");
     setError("");
+  }
+
+  function toggleProduct(product: Product) {
+    const exists = items.some((item) => item.product.id === product.id);
+    updateItems(exists ? items.filter((item) => item.product.id !== product.id) : [...items, { product, quantity: 1 }]);
+  }
+
+  function changeQuantity(productID: number, change: number) {
+    updateItems(items.map((item) => item.product.id === productID ? { ...item, quantity: Math.min(99, Math.max(1, item.quantity + change)) } : item));
   }
 
   async function recordCopy(order: CreatedOrder) {
@@ -414,7 +429,7 @@ function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; onBusyChange: (bu
   async function submit(event: FormEvent) {
     event.preventDefault();
     const numericAmount = Number(amount);
-    if (!selected || !Number.isSafeInteger(numericAmount) || numericAmount <= 0) {
+    if (!items.length || !Number.isSafeInteger(numericAmount) || numericAmount <= 0) {
       setAmountError("مبلغ سفارش را به‌صورت یک عدد بزرگ‌تر از صفر وارد کنید.");
       return;
     }
@@ -444,7 +459,7 @@ function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; onBusyChange: (bu
         body: JSON.stringify({
           createKey,
           shopId: shop.id,
-          productId: selected.id,
+          items: items.map((item) => ({ productId: item.product.id, quantity: item.quantity })),
           amount: numericAmount,
           instagramUsername: instagram,
           internalNote: note,
@@ -475,7 +490,7 @@ function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; onBusyChange: (bu
   }
 
   function reset() {
-    setSelected(null);
+    setItems([]);
     setAmount("");
     setInstagram("");
     setNote("");
@@ -502,23 +517,21 @@ function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; onBusyChange: (bu
           {copyState === "failed" && "کپی خودکار در این مرورگر انجام نشد. لینک را از کادر زیر کپی کنید."}
         </p>
 
-        {copyState === "failed" && (
-          <div className="mt-6 rounded-3xl border border-saffron/50 bg-saffron/10 p-4">
-            <label className="text-sm font-bold" htmlFor="customer-link">لینک مشتری</label>
-            <input
-              id="customer-link"
-              className="field mt-2 text-left text-sm"
-              dir="ltr"
-              readOnly
-              value={created.customerUrl}
-              onFocus={(event) => event.currentTarget.select()}
-            />
-            <button className="secondary-button mt-3 w-full" type="button" onClick={() => copyLink(created)}>
-              <Clipboard className="size-5" aria-hidden="true" />
-              کپی دوباره
-            </button>
-          </div>
-        )}
+        <div className="mt-6 rounded-3xl border border-saffron/50 bg-saffron/10 p-4">
+          <label className="text-sm font-bold" htmlFor="customer-link">لینک مشتری</label>
+          <input
+            id="customer-link"
+            className="field mt-2 text-left text-sm"
+            dir="ltr"
+            readOnly
+            value={created.customerUrl}
+            onFocus={(event) => event.currentTarget.select()}
+          />
+          <button className="secondary-button mt-3 w-full" type="button" onClick={() => copyLink(created)} disabled={copyState === "copying"}>
+            {copyState === "copying" ? <LoaderCircle className="size-5 animate-spin" aria-hidden="true" /> : <Clipboard className="size-5" aria-hidden="true" />}
+            {copyState === "copying" ? "در حال کپی…" : "کپی لینک"}
+          </button>
+        </div>
 
         <button className="primary-button mt-8 w-full" type="button" onClick={reset} disabled={pending}>
           <Plus className="size-5" aria-hidden="true" />
@@ -534,7 +547,7 @@ function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; onBusyChange: (bu
       <section className="page-content pb-8">
         <p className="page-kicker">{shop.name}</p>
         <h1 className="page-title">سفارش جدید</h1>
-        <p className="mt-2 text-sm leading-7 text-ink/70">محصول را انتخاب کنید؛ مبلغ آماده است و لینک با یک لمس ساخته می‌شود.</p>
+        <p className="mt-2 text-sm leading-7 text-ink/70">یک یا چند محصول را انتخاب کنید؛ مبلغ آماده است و لینک با یک لمس ساخته می‌شود.</p>
 
         <fieldset className="mt-7">
           <legend className="text-sm font-black">انتخاب محصول</legend>
@@ -554,31 +567,51 @@ function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; onBusyChange: (bu
           )}
           <div className="mt-3 space-y-3">
             {products.map((product) => {
-              const isSelected = selected?.id === product.id;
+              const selectedItem = items.find((item) => item.product.id === product.id);
+              const isSelected = Boolean(selectedItem);
               return (
-                <button
-                  className={`product-choice ${isSelected ? "product-choice-selected" : ""}`}
+                <div
+                  className={`product-choice product-choice-multi ${isSelected ? "product-choice-selected" : ""}`}
                   key={product.id}
-                  type="button"
-                  aria-pressed={isSelected}
-                  onClick={() => chooseProduct(product)}
                 >
-                  <ProductImage product={product} />
-                  <span className="min-w-0 flex-1 text-right">
-                    <span className="block font-black">{product.name}</span>
-                    {product.shortDescription && <span className="mt-0.5 block truncate text-xs text-ink/70">{product.shortDescription}</span>}
-                    <span className="mt-2 block text-sm font-bold text-teal">{persianNumber(product.defaultPrice)} تومان</span>
-                  </span>
-                  <span className={`grid size-6 shrink-0 place-items-center rounded-full border ${isSelected ? "border-saffron bg-saffron" : "border-ink/20"}`}>
-                    {isSelected && <Check className="size-4" strokeWidth={3} aria-hidden="true" />}
-                  </span>
-                </button>
+                  <button
+                    className="product-choice-main"
+                    type="button"
+                    aria-pressed={isSelected}
+                    onClick={() => toggleProduct(product)}
+                  >
+                    <ProductImage product={product} />
+                    <span className="min-w-0 flex-1 text-right">
+                      <span className="block font-black">{product.name}</span>
+                      {product.shortDescription && <span className="mt-0.5 block truncate text-xs text-ink/70">{product.shortDescription}</span>}
+                      <span className="mt-2 block text-sm font-bold text-teal">{persianNumber(product.defaultPrice)} تومان</span>
+                    </span>
+                    <span className={`grid size-6 shrink-0 place-items-center rounded-full border ${isSelected ? "border-saffron bg-saffron" : "border-ink/20"}`}>
+                      {isSelected && <Check className="size-4" strokeWidth={3} aria-hidden="true" />}
+                    </span>
+                  </button>
+                  {selectedItem && (
+                    <div className="flex items-center justify-between border-t border-saffron/35 px-4 py-2.5">
+                      <span className="text-sm font-bold">تعداد</span>
+                      <span className="flex items-center gap-2" aria-label={`تعداد ${product.name}`}>
+                        <button className="quantity-button" type="button" onClick={() => changeQuantity(product.id, -1)} disabled={selectedItem.quantity === 1} aria-label={`کم‌کردن تعداد ${product.name}`}>−</button>
+                        <span className="min-w-7 text-center font-black" aria-live="polite">{persianNumber(selectedItem.quantity)}</span>
+                        <button className="quantity-button" type="button" onClick={() => changeQuantity(product.id, 1)} disabled={selectedItem.quantity === 99} aria-label={`زیادکردن تعداد ${product.name}`}>+</button>
+                      </span>
+                    </div>
+                  )}
+                </div>
               );
             })}
           </div>
+          {items.length > 0 && (
+            <p className="mt-3 text-sm font-bold text-teal" aria-live="polite">
+              {persianNumber(items.reduce((total, item) => total + item.quantity, 0))} قلم از {persianNumber(items.length)} محصول انتخاب شده
+            </p>
+          )}
         </fieldset>
 
-        {selected && (
+        {items.length > 0 && (
           <div className="creation-fields mt-7">
             <label className="block" htmlFor="amount">
               <span className="mb-2 block text-sm font-black">مبلغ سفارش</span>
@@ -641,7 +674,7 @@ function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; onBusyChange: (bu
       </section>
 
       <div className="create-action">
-        <button className="primary-button w-full" type="submit" disabled={!selected || pending || loading}>
+        <button className="primary-button w-full" type="submit" disabled={!items.length || pending || loading}>
           {pending ? <LoaderCircle className="size-5 animate-spin" aria-hidden="true" /> : <Clipboard className="size-5" aria-hidden="true" />}
           {pending ? "در حال ساخت سفارش…" : "ساخت و کپی لینک"}
         </button>

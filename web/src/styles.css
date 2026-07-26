@@ -212,6 +212,41 @@ button:disabled {
   background: #e9a928;
 }
 
+.product-choice-multi {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  padding: 0;
+}
+
+.product-choice-main {
+  display: flex;
+  min-height: 6.5rem;
+  width: 100%;
+  align-items: center;
+  gap: 0.875rem;
+  padding: 0.75rem 1rem 0.75rem 0.75rem;
+  color: #183b4e;
+}
+
+.quantity-button {
+  display: grid;
+  min-height: 2.75rem;
+  min-width: 2.75rem;
+  place-items: center;
+  border: 1px solid #cbdadd;
+  border-radius: 0.8rem;
+  background: #fff;
+  color: #183b4e;
+  font-size: 1.25rem;
+  font-weight: 900;
+}
+
+.quantity-button:disabled {
+  opacity: 0.4;
+}
+
 .creation-fields {
   animation: reveal-fields 180ms ease-out both;
 }

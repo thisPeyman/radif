@@ -49,11 +49,11 @@ func TestProductsRequireOwnedShop(t *testing.T) {
 func TestCreateOrderAndRecordCopy(t *testing.T) {
 	db, e, _, admin := newAuthTestServer(t)
 	cookie := loginCookie(t, e)
-	var product Product
-	if err := db.First(&product).Error; err != nil {
+	var products []Product
+	if err := db.Order("id").Limit(2).Find(&products).Error; err != nil || len(products) != 2 {
 		t.Fatal(err)
 	}
-	body := fmt.Sprintf(`{"createKey":"create-test-1","shopId":%d,"productId":%d,"amount":430000,"instagramUsername":" @customer ","internalNote":" test ","elapsedMs":1234}`, product.ShopID, product.ID)
+	body := fmt.Sprintf(`{"createKey":"create-test-1","shopId":%d,"items":[{"productId":%d,"quantity":2},{"productId":%d,"quantity":1}],"amount":1520000,"instagramUsername":" @customer ","internalNote":" test ","elapsedMs":1234}`, products[0].ShopID, products[0].ID, products[1].ID)
 	response := request(e, http.MethodPost, "/api/orders", body, testOrigin, cookie)
 	if response.Code != http.StatusCreated {
 		t.Fatalf("create returned %d: %s", response.Code, response.Body.String())
@@ -79,8 +79,15 @@ func TestCreateOrderAndRecordCopy(t *testing.T) {
 	if err := db.First(&order, output.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if order.Status != waitingInfoStatus || order.InstagramUsername != "customer" || order.InternalNote != "test" || order.Amount != 430000 {
+	if order.Status != waitingInfoStatus || order.InstagramUsername != "customer" || order.InternalNote != "test" || order.Amount != 1520000 {
 		t.Fatalf("unexpected order: %#v", order)
+	}
+	var items []OrderItem
+	if err := db.Where("order_id = ?", order.ID).Order("product_id").Find(&items).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 2 || items[0].Quantity != 2 || items[0].UnitPrice != products[0].DefaultPrice || items[1].Quantity != 1 {
+		t.Fatalf("unexpected order items: %#v", items)
 	}
 	var history OrderStatusHistory
 	if err := db.First(&history, "order_id = ?", order.ID).Error; err != nil || history.NewStatus != waitingInfoStatus || history.ChangedByAdminID == nil || *history.ChangedByAdminID != admin.ID {
@@ -98,7 +105,7 @@ func TestCreateOrderAndRecordCopy(t *testing.T) {
 	if err := db.Model(&Order{}).Count(&orderCount).Error; err != nil || orderCount != 1 {
 		t.Fatalf("idempotent retry left %d orders, error %v", orderCount, err)
 	}
-	mismatch := request(e, http.MethodPost, "/api/orders", strings.Replace(body, "430000", "440000", 1), testOrigin, cookie)
+	mismatch := request(e, http.MethodPost, "/api/orders", strings.Replace(body, "1520000", "1530000", 1), testOrigin, cookie)
 	if mismatch.Code != http.StatusConflict {
 		t.Fatalf("idempotency mismatch returned %d: %s", mismatch.Code, mismatch.Body.String())
 	}
@@ -121,10 +128,11 @@ func TestCreateOrderValidationAndOwnership(t *testing.T) {
 	}
 
 	for name, body := range map[string]string{
-		"missing amount": fmt.Sprintf(`{"createKey":"missing-amount","shopId":%d,"productId":%d,"amount":0}`, product.ShopID, product.ID),
-		"wrong shop":     fmt.Sprintf(`{"createKey":"wrong-shop","shopId":9999,"productId":%d,"amount":1}`, product.ID),
-		"unknown field":  fmt.Sprintf(`{"createKey":"unknown-field","shopId":%d,"productId":%d,"amount":1,"extra":true}`, product.ShopID, product.ID),
-		"trailing JSON":  fmt.Sprintf(`{"createKey":"trailing","shopId":%d,"productId":%d,"amount":1}{}`, product.ShopID, product.ID),
+		"missing amount": fmt.Sprintf(`{"createKey":"missing-amount","shopId":%d,"items":[{"productId":%d,"quantity":1}],"amount":0}`, product.ShopID, product.ID),
+		"wrong shop":     fmt.Sprintf(`{"createKey":"wrong-shop","shopId":9999,"items":[{"productId":%d,"quantity":1}],"amount":1}`, product.ID),
+		"duplicate item": fmt.Sprintf(`{"createKey":"duplicate","shopId":%d,"items":[{"productId":%d,"quantity":1},{"productId":%d,"quantity":2}],"amount":1}`, product.ShopID, product.ID, product.ID),
+		"unknown field":  fmt.Sprintf(`{"createKey":"unknown-field","shopId":%d,"items":[{"productId":%d,"quantity":1}],"amount":1,"extra":true}`, product.ShopID, product.ID),
+		"trailing JSON":  fmt.Sprintf(`{"createKey":"trailing","shopId":%d,"items":[{"productId":%d,"quantity":1}],"amount":1}{}`, product.ShopID, product.ID),
 	} {
 		t.Run(name, func(t *testing.T) {
 			response := request(e, http.MethodPost, "/api/orders", body, testOrigin, cookie)
@@ -153,7 +161,7 @@ func createOtherOrder(t *testing.T, db *gorm.DB) Order {
 	if err := db.Create(&product).Error; err != nil {
 		t.Fatal(err)
 	}
-	order := Order{CreateKey: "other-create", SecretToken: "other-token", ShopID: shop.ID, ProductID: product.ID, Amount: 1, Status: waitingInfoStatus}
+	order := Order{CreateKey: "other-create", SecretToken: "other-token", ShopID: shop.ID, Amount: 1, Status: waitingInfoStatus}
 	if err := db.Create(&order).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -163,8 +171,18 @@ func createOtherOrder(t *testing.T, db *gorm.DB) Order {
 func TestCopyEventRequiresOwnership(t *testing.T) {
 	db, e, _, _ := newAuthTestServer(t)
 	order := createOtherOrder(t, db)
-	response := request(e, http.MethodPost, fmt.Sprintf("/api/orders/%d/link-copied", order.ID), "", testOrigin, loginCookie(t, e))
+	cookie := loginCookie(t, e)
+	response := request(e, http.MethodPost, fmt.Sprintf("/api/orders/%d/link-copied", order.ID), "", testOrigin, cookie)
 	if response.Code != http.StatusNotFound {
 		t.Fatalf("cross-shop copy event returned %d", response.Code)
+	}
+	var ownProduct Product
+	if err := db.Order("id").First(&ownProduct).Error; err != nil {
+		t.Fatal(err)
+	}
+	body := fmt.Sprintf(`{"createKey":"other-create","shopId":%d,"items":[{"productId":%d,"quantity":1}],"amount":1}`, ownProduct.ShopID, ownProduct.ID)
+	response = request(e, http.MethodPost, "/api/orders", body, testOrigin, cookie)
+	if response.Code != http.StatusConflict {
+		t.Fatalf("cross-admin idempotency collision returned %d: %s", response.Code, response.Body.String())
 	}
 }

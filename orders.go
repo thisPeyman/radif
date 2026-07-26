@@ -45,9 +45,12 @@ func products(db *gorm.DB) echo.HandlerFunc {
 func createOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		var input struct {
-			CreateKey         string `json:"createKey"`
-			ShopID            uint   `json:"shopId"`
-			ProductID         uint   `json:"productId"`
+			CreateKey string `json:"createKey"`
+			ShopID    uint   `json:"shopId"`
+			Items     []struct {
+				ProductID uint `json:"productId"`
+				Quantity  int  `json:"quantity"`
+			} `json:"items"`
 			Amount            int64  `json:"amount"`
 			InstagramUsername string `json:"instagramUsername"`
 			InternalNote      string `json:"internalNote"`
@@ -65,8 +68,17 @@ func createOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 		input.CreateKey = strings.TrimSpace(input.CreateKey)
 		input.InstagramUsername = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(input.InstagramUsername), "@"))
 		input.InternalNote = strings.TrimSpace(input.InternalNote)
-		if input.CreateKey == "" || len(input.CreateKey) > 100 || input.ShopID == 0 || input.ProductID == 0 || input.Amount <= 0 {
+		if input.CreateKey == "" || len(input.CreateKey) > 100 || input.ShopID == 0 || len(input.Items) == 0 || len(input.Items) > 50 || input.Amount <= 0 {
 			return echo.NewHTTPError(http.StatusBadRequest, "محصول و مبلغ سفارش الزامی است.")
+		}
+		productIDs := make([]uint, len(input.Items))
+		inputQuantities := make(map[uint]int, len(input.Items))
+		for i, item := range input.Items {
+			if item.ProductID == 0 || item.Quantity < 1 || item.Quantity > 99 || inputQuantities[item.ProductID] != 0 {
+				return echo.NewHTTPError(http.StatusBadRequest, "محصول‌های سفارش معتبر نیستند.")
+			}
+			productIDs[i] = item.ProductID
+			inputQuantities[item.ProductID] = item.Quantity
 		}
 		if len([]rune(input.InstagramUsername)) > 100 || len([]rune(input.InternalNote)) > 1000 {
 			return echo.NewHTTPError(http.StatusBadRequest, "متن واردشده بیش از حد طولانی است.")
@@ -80,13 +92,18 @@ func createOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 
 		admin := c.Get(adminContextKey).(*Admin)
 		respondExisting := func(order Order) error {
-			if order.ShopID != input.ShopID || order.ProductID != input.ProductID || order.Amount != input.Amount || order.InstagramUsername != input.InstagramUsername || order.InternalNote != input.InternalNote {
+			if order.ShopID != input.ShopID || order.Amount != input.Amount || order.InstagramUsername != input.InstagramUsername || order.InternalNote != input.InternalNote || len(order.Items) != len(input.Items) {
 				return echo.NewHTTPError(http.StatusConflict, "این درخواست قبلاً برای سفارش دیگری استفاده شده است.")
+			}
+			for _, item := range order.Items {
+				if inputQuantities[item.ProductID] != item.Quantity {
+					return echo.NewHTTPError(http.StatusConflict, "این درخواست قبلاً برای سفارش دیگری استفاده شده است.")
+				}
 			}
 			return orderCreatedResponse(c, cfg, order)
 		}
 		var existing Order
-		err := db.Joins("JOIN shops ON shops.id = orders.shop_id").Where("orders.create_key = ? AND shops.owner_admin_id = ?", input.CreateKey, admin.ID).First(&existing).Error
+		err := db.Preload("Items").Joins("JOIN shops ON shops.id = orders.shop_id").Where("orders.create_key = ? AND shops.owner_admin_id = ?", input.CreateKey, admin.ID).First(&existing).Error
 		if err == nil {
 			return respondExisting(existing)
 		}
@@ -94,12 +111,12 @@ func createOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 			return err
 		}
 
-		var product Product
+		var products []Product
 		err = db.Joins("JOIN shops ON shops.id = products.shop_id").Where(
-			"products.id = ? AND products.shop_id = ? AND products.active = ? AND shops.active = ? AND shops.owner_admin_id = ?",
-			input.ProductID, input.ShopID, true, true, admin.ID,
-		).First(&product).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+			"products.id IN ? AND products.shop_id = ? AND products.active = ? AND shops.active = ? AND shops.owner_admin_id = ?",
+			productIDs, input.ShopID, true, true, admin.ID,
+		).Find(&products).Error
+		if err == nil && len(products) != len(input.Items) {
 			return echo.NewHTTPError(http.StatusNotFound, "محصول پیدا نشد.")
 		}
 		if err != nil {
@@ -113,7 +130,6 @@ func createOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 			CreateKey:         input.CreateKey,
 			SecretToken:       token,
 			ShopID:            input.ShopID,
-			ProductID:         input.ProductID,
 			Amount:            input.Amount,
 			InstagramUsername: input.InstagramUsername,
 			InternalNote:      input.InternalNote,
@@ -129,6 +145,13 @@ func createOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 			if result.RowsAffected == 0 {
 				return errOrderAlreadyCreated
 			}
+			items := make([]OrderItem, len(products))
+			for i, product := range products {
+				items[i] = OrderItem{OrderID: order.ID, ProductID: product.ID, Quantity: inputQuantities[product.ID], UnitPrice: product.DefaultPrice}
+			}
+			if err := tx.Create(&items).Error; err != nil {
+				return err
+			}
 			history := OrderStatusHistory{OrderID: order.ID, NewStatus: waitingInfoStatus, ChangedByAdminID: &admin.ID}
 			if err := tx.Create(&history).Error; err != nil {
 				return err
@@ -140,7 +163,11 @@ func createOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 			return tx.Create(&events).Error
 		})
 		if errors.Is(err, errOrderAlreadyCreated) {
-			if err := db.Joins("JOIN shops ON shops.id = orders.shop_id").Where("orders.create_key = ? AND shops.owner_admin_id = ?", input.CreateKey, admin.ID).First(&existing).Error; err != nil {
+			err := db.Preload("Items").Joins("JOIN shops ON shops.id = orders.shop_id").Where("orders.create_key = ? AND shops.owner_admin_id = ?", input.CreateKey, admin.ID).First(&existing).Error
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return echo.NewHTTPError(http.StatusConflict, "شناسه ساخت سفارش قبلاً استفاده شده است.")
+			}
+			if err != nil {
 				return err
 			}
 			return respondExisting(existing)
