@@ -1,0 +1,92 @@
+package main
+
+import "time"
+
+type Admin struct {
+	ID           uint   `gorm:"primaryKey"`
+	Name         string `gorm:"not null"`
+	Login        string `gorm:"not null;uniqueIndex"`
+	PasswordHash string `gorm:"not null"`
+	Active       bool   `gorm:"not null"`
+	CreatedAt    time.Time
+}
+
+type Session struct {
+	TokenHash string `gorm:"primaryKey"`
+	AdminID   uint   `gorm:"not null;index"`
+	Admin     Admin
+	ExpiresAt time.Time `gorm:"not null;index"`
+	CreatedAt time.Time
+}
+
+type Shop struct {
+	ID                  uint   `gorm:"primaryKey"`
+	OwnerAdminID        uint   `gorm:"not null;uniqueIndex:idx_shops_owner_name"`
+	Owner               Admin  `gorm:"foreignKey:OwnerAdminID"`
+	Name                string `gorm:"not null;uniqueIndex:idx_shops_owner_name"`
+	LogoPath            string
+	ShortDescription    string
+	PaymentInstructions string `gorm:"not null"`
+	Active              bool   `gorm:"not null;index"`
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+}
+
+type Product struct {
+	ID               uint `gorm:"primaryKey"`
+	ShopID           uint `gorm:"not null;uniqueIndex:idx_products_shop_name"`
+	Shop             Shop
+	Name             string `gorm:"not null;uniqueIndex:idx_products_shop_name"`
+	MainImagePath    string `gorm:"not null"`
+	DefaultPrice     int64  `gorm:"not null"`
+	ShortDescription string
+	Active           bool `gorm:"not null;index"`
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+}
+
+type Order struct {
+	ID                   uint   `gorm:"primaryKey"`
+	SecretToken          string `gorm:"not null;uniqueIndex"`
+	ShopID               uint   `gorm:"not null;index"`
+	Shop                 Shop
+	ProductID            uint `gorm:"not null;index"`
+	Product              Product
+	Amount               int64 `gorm:"not null"`
+	InstagramUsername    string
+	InternalNote         string
+	CustomerFullName     string
+	CustomerMobile       string
+	CustomerAddress      string
+	CustomerPostalCode   string
+	CustomerNote         string
+	ReceiptFilePath      string
+	ReceiptUploadedAt    *time.Time
+	Status               string `gorm:"not null;index"`
+	ShipmentTrackingCode string
+	CustomerSubmittedAt  *time.Time
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+}
+
+type OrderStatusHistory struct {
+	ID               uint `gorm:"primaryKey"`
+	OrderID          uint `gorm:"not null;index"`
+	Order            Order
+	PreviousStatus   string
+	NewStatus        string `gorm:"not null"`
+	ChangedByAdminID *uint
+	ChangedByAdmin   *Admin `gorm:"foreignKey:ChangedByAdminID"`
+	CreatedAt        time.Time
+}
+
+type PilotEvent struct {
+	ID        uint   `gorm:"primaryKey"`
+	EventName string `gorm:"not null;index"`
+	OrderID   *uint  `gorm:"index"`
+	Order     *Order
+	AdminID   *uint `gorm:"index"`
+	Admin     *Admin
+	Metadata  string `gorm:"type:text"`
+	CreatedAt time.Time
+}

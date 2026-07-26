@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" role="img" aria-label="Sample saffron product image">
+  <rect width="800" height="600" fill="#f7f9f8"/>
+  <rect x="230" y="130" width="340" height="340" rx="90" fill="#e9a928"/>
+  <path d="M310 300h180M400 210v180" stroke="#183b4e" stroke-width="32" stroke-linecap="round"/>
+</svg>

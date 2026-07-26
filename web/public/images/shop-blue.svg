@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Sample blue shop logo">
+  <rect width="256" height="256" rx="64" fill="#183b4e"/>
+  <path d="M64 126 128 70l64 56v66H64z" fill="#e4eef0"/>
+  <circle cx="128" cy="145" r="25" fill="#287266"/>
+</svg>

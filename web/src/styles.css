@@ -1,0 +1,34 @@
+@import "tailwindcss";
+
+:root {
+  font-family: "Vazirmatn Variable", sans-serif;
+  font-synthesis: none;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+*:focus-visible {
+  outline: 3px solid #e9a928;
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
