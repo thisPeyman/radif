@@ -126,10 +126,11 @@ func login(db *gorm.DB, cfg config, limiter *loginLimiter) echo.HandlerFunc {
 		if err := db.Where("expires_at <= ?", time.Now()).Delete(&Session{}).Error; err != nil {
 			return err
 		}
-		token, tokenHash, err := newSessionToken()
+		token, err := newOpaqueToken()
 		if err != nil {
 			return err
 		}
+		tokenHash := hashToken(token)
 		expiresAt := time.Now().Add(cfg.sessionLifetime)
 		if err := db.Create(&Session{TokenHash: tokenHash, AdminID: admin.ID, ExpiresAt: expiresAt}).Error; err != nil {
 			return err
@@ -242,13 +243,12 @@ func requireOrigin(origin string) echo.MiddlewareFunc {
 	}
 }
 
-func newSessionToken() (string, string, error) {
+func newOpaqueToken() (string, error) {
 	random := make([]byte, 32)
 	if _, err := rand.Read(random); err != nil {
-		return "", "", err
+		return "", err
 	}
-	token := base64.RawURLEncoding.EncodeToString(random)
-	return token, hashToken(token), nil
+	return base64.RawURLEncoding.EncodeToString(random), nil
 }
 
 func hashToken(token string) string {

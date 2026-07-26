@@ -47,6 +47,7 @@ type Product struct {
 
 type Order struct {
 	ID                   uint   `gorm:"primaryKey"`
+	CreateKey            string `gorm:"not null;uniqueIndex"`
 	SecretToken          string `gorm:"not null;uniqueIndex"`
 	ShopID               uint   `gorm:"not null;index"`
 	Shop                 Shop

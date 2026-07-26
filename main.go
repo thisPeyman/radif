@@ -58,6 +58,9 @@ func newServer(db *gorm.DB, cfg config) *echo.Echo {
 	e.POST("/api/session", login(db, cfg, limiter), origin)
 	e.DELETE("/api/session", logout(db, cfg), origin)
 	e.GET("/api/me", me(db), requireAdmin(db, cfg))
+	e.GET("/api/shops/:shopID/products", products(db), requireAdmin(db, cfg), requireShopOwner(db))
+	e.POST("/api/orders", createOrder(db, cfg), requireAdmin(db, cfg), origin)
+	e.POST("/api/orders/:orderID/link-copied", recordLinkCopied(db), requireAdmin(db, cfg), origin)
 
 	e.Use(middleware.StaticWithConfig(middleware.StaticConfig{
 		Skipper: func(c echo.Context) bool {
