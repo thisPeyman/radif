@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -20,6 +22,11 @@ const (
 	waitingInfoStatus    = "waiting_info"
 	waitingPaymentStatus = "waiting_payment"
 )
+
+var validOrderStatuses = map[string]bool{
+	"waiting_info": true, "waiting_payment": true, "paid": true,
+	"preparing": true, "shipped": true, "cancelled": true,
+}
 
 var errOrderAlreadyCreated = errors.New("order already created")
 
@@ -211,41 +218,122 @@ func validDeliveryDate(value string) bool {
 	return err == nil && !deliveryDate.Before(today)
 }
 
-func updateDeliveryDate(db *gorm.DB) echo.HandlerFunc {
+func updateOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		orderID, err := strconv.ParseUint(c.Param("orderID"), 10, 64)
 		if err != nil {
 			return echo.NewHTTPError(http.StatusNotFound, "سفارش پیدا نشد.")
 		}
 		var input struct {
-			EstimatedDeliveryDate string `json:"estimatedDeliveryDate"`
+			EstimatedDeliveryDate *string `json:"estimatedDeliveryDate"`
+			Status                *string `json:"status"`
+			CustomerFullName      *string `json:"customerFullName"`
+			CustomerMobile        *string `json:"customerMobile"`
+			CustomerAddress       *string `json:"customerAddress"`
+			CustomerPostalCode    *string `json:"customerPostalCode"`
+			CustomerNote          *string `json:"customerNote"`
+			ShipmentTrackingCode  *string `json:"shipmentTrackingCode"`
 		}
-		c.Request().Body = http.MaxBytesReader(c.Response(), c.Request().Body, 4<<10)
+		c.Request().Body = http.MaxBytesReader(c.Response(), c.Request().Body, 16<<10)
 		decoder := json.NewDecoder(c.Request().Body)
 		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&input); err != nil || !validDeliveryDate(strings.TrimSpace(input.EstimatedDeliveryDate)) {
-			return echo.NewHTTPError(http.StatusBadRequest, "تاریخ تحویل باید امروز یا بعد از آن باشد.")
+		if err := decoder.Decode(&input); err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "اطلاعات سفارش معتبر نیست.")
 		}
 		if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-			return echo.NewHTTPError(http.StatusBadRequest, "تاریخ تحویل باید امروز یا بعد از آن باشد.")
+			return echo.NewHTTPError(http.StatusBadRequest, "اطلاعات سفارش معتبر نیست.")
+		}
+		if input.EstimatedDeliveryDate == nil && input.Status == nil && input.CustomerFullName == nil && input.CustomerMobile == nil && input.CustomerAddress == nil && input.CustomerPostalCode == nil && input.CustomerNote == nil && input.ShipmentTrackingCode == nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "تغییری برای ذخیره ارسال نشده است.")
+		}
+		if input.EstimatedDeliveryDate != nil {
+			value := strings.TrimSpace(*input.EstimatedDeliveryDate)
+			if !validDeliveryDate(value) {
+				return echo.NewHTTPError(http.StatusBadRequest, "تاریخ تحویل باید امروز یا بعد از آن باشد.")
+			}
+			input.EstimatedDeliveryDate = &value
+		}
+		if input.Status != nil {
+			value := strings.TrimSpace(*input.Status)
+			if !validOrderStatuses[value] {
+				return echo.NewHTTPError(http.StatusBadRequest, "وضعیت سفارش معتبر نیست.")
+			}
+			input.Status = &value
+		}
+		if input.ShipmentTrackingCode != nil {
+			value := strings.TrimSpace(*input.ShipmentTrackingCode)
+			if len([]rune(value)) > 100 {
+				return echo.NewHTTPError(http.StatusBadRequest, "کد رهگیری بیش از حد طولانی است.")
+			}
+			input.ShipmentTrackingCode = &value
 		}
 		admin := c.Get(adminContextKey).(*Admin)
-		var order Order
-		err = db.Joins("JOIN shops ON shops.id = orders.shop_id").Where("orders.id = ? AND shops.owner_admin_id = ?", orderID, admin.ID).First(&order).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return echo.NewHTTPError(http.StatusNotFound, "سفارش پیدا نشد.")
-		}
+		err = db.Transaction(func(tx *gorm.DB) error {
+			var order Order
+			err := tx.Joins("JOIN shops ON shops.id = orders.shop_id").Where("orders.id = ? AND shops.owner_admin_id = ?", orderID, admin.ID).First(&order).Error
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return echo.NewHTTPError(http.StatusNotFound, "سفارش پیدا نشد.")
+			}
+			if err != nil {
+				return err
+			}
+			updates := map[string]any{}
+			if input.EstimatedDeliveryDate != nil {
+				updates["estimated_delivery_date"] = *input.EstimatedDeliveryDate
+			}
+			if input.ShipmentTrackingCode != nil {
+				updates["shipment_tracking_code"] = *input.ShipmentTrackingCode
+			}
+			customerUpdate := input.CustomerFullName != nil || input.CustomerMobile != nil || input.CustomerAddress != nil || input.CustomerPostalCode != nil || input.CustomerNote != nil
+			if customerUpdate {
+				if order.CustomerSubmittedAt == nil {
+					return echo.NewHTTPError(http.StatusConflict, "اطلاعات مشتری هنوز ثبت نشده است.")
+				}
+				details := customerDetails{order.CustomerFullName, order.CustomerMobile, order.CustomerAddress, order.CustomerPostalCode, order.CustomerNote}
+				if input.CustomerFullName != nil {
+					details.fullName = strings.TrimSpace(*input.CustomerFullName)
+				}
+				if input.CustomerMobile != nil {
+					details.mobile = normalizeIranianMobile(*input.CustomerMobile)
+				}
+				if input.CustomerAddress != nil {
+					details.address = strings.TrimSpace(*input.CustomerAddress)
+				}
+				if input.CustomerPostalCode != nil {
+					details.postalCode = normalizeDigits(*input.CustomerPostalCode)
+				}
+				if input.CustomerNote != nil {
+					details.note = strings.TrimSpace(*input.CustomerNote)
+				}
+				if err := validateCustomerDetails(details); err != nil {
+					return err
+				}
+				updates["customer_full_name"], updates["customer_mobile"] = details.fullName, details.mobile
+				updates["customer_address"], updates["customer_postal_code"], updates["customer_note"] = details.address, details.postalCode, details.note
+			}
+			statusChanged := input.Status != nil && *input.Status != order.Status
+			previousStatus := order.Status
+			if statusChanged {
+				updates["status"] = *input.Status
+			}
+			if len(updates) > 0 {
+				if err := tx.Model(&order).Updates(updates).Error; err != nil {
+					return err
+				}
+			}
+			if statusChanged {
+				return tx.Create(&OrderStatusHistory{OrderID: order.ID, PreviousStatus: previousStatus, NewStatus: *input.Status, ChangedByAdminID: &admin.ID}).Error
+			}
+			return nil
+		})
 		if err != nil {
 			return err
 		}
-		if order.EstimatedDeliveryDate == strings.TrimSpace(input.EstimatedDeliveryDate) {
-			return c.JSON(http.StatusOK, map[string]string{"estimatedDeliveryDate": order.EstimatedDeliveryDate})
-		}
-		order.EstimatedDeliveryDate = strings.TrimSpace(input.EstimatedDeliveryDate)
-		if err := db.Model(&order).Update("estimated_delivery_date", order.EstimatedDeliveryDate).Error; err != nil {
+		order, err := findAdminOrder(db, admin.ID, uint(orderID))
+		if err != nil {
 			return err
 		}
-		return c.JSON(http.StatusOK, map[string]string{"estimatedDeliveryDate": order.EstimatedDeliveryDate})
+		return adminOrderResponse(c, cfg, order)
 	}
 }
 
@@ -262,17 +350,51 @@ func listOrders(db *gorm.DB) echo.HandlerFunc {
 		} else if err != nil {
 			return err
 		}
+		status := strings.TrimSpace(c.QueryParam("status"))
+		if status != "" && !validOrderStatuses[status] {
+			return echo.NewHTTPError(http.StatusBadRequest, "وضعیت سفارش معتبر نیست.")
+		}
+		search := strings.TrimSpace(c.QueryParam("q"))
+		if len([]rune(search)) > 100 {
+			return echo.NewHTTPError(http.StatusBadRequest, "عبارت جستجو بیش از حد طولانی است.")
+		}
+		query := db.Preload("Items.Product").Where("shop_id = ?", shop.ID)
+		if status != "" {
+			query = query.Where("status = ?", status)
+		}
+		if search != "" {
+			escaped := strings.NewReplacer("\\", "\\\\", "%", "\\%", "_", "\\_").Replace(search)
+			like := "%" + escaped + "%"
+			mobile := normalizeIranianMobile(search)
+			conditions := "customer_full_name LIKE ? ESCAPE '\\' OR instagram_username LIKE ? ESCAPE '\\'"
+			args := []any{like, like}
+			if mobile != "" {
+				conditions += " OR customer_mobile LIKE ?"
+				args = append(args, "%"+mobile+"%")
+			}
+			orderCode := strings.TrimPrefix(normalizeDigits(search), "#")
+			if id, parseErr := strconv.ParseUint(orderCode, 10, 64); parseErr == nil {
+				conditions += " OR id = ?"
+				args = append(args, id)
+			}
+			query = query.Where("("+conditions+")", args...)
+		}
 		var orders []Order
-		if err := db.Preload("Items.Product").Where("shop_id = ?", shop.ID).Order("created_at DESC").Limit(100).Find(&orders).Error; err != nil {
+		if err := query.Order("created_at DESC, id DESC").Limit(100).Find(&orders).Error; err != nil {
 			return err
 		}
 		type orderSummary struct {
-			ID                    uint   `json:"id"`
-			OrderCode             string `json:"orderCode"`
-			ProductSummary        string `json:"productSummary"`
-			Amount                int64  `json:"amount"`
-			Status                string `json:"status"`
-			EstimatedDeliveryDate string `json:"estimatedDeliveryDate"`
+			ID                    uint      `json:"id"`
+			OrderCode             string    `json:"orderCode"`
+			ProductSummary        string    `json:"productSummary"`
+			CustomerFullName      string    `json:"customerFullName,omitempty"`
+			CustomerSubmitted     bool      `json:"customerSubmitted"`
+			ReceiptUploaded       bool      `json:"receiptUploaded"`
+			HasTrackingCode       bool      `json:"hasTrackingCode"`
+			Amount                int64     `json:"amount"`
+			Status                string    `json:"status"`
+			EstimatedDeliveryDate string    `json:"estimatedDeliveryDate"`
+			CreatedAt             time.Time `json:"createdAt"`
 		}
 		response := make([]orderSummary, len(orders))
 		for i, order := range orders {
@@ -283,41 +405,133 @@ func listOrders(db *gorm.DB) echo.HandlerFunc {
 					productSummary += fmt.Sprintf(" و %d محصول دیگر", len(order.Items)-1)
 				}
 			}
-			response[i] = orderSummary{order.ID, fmt.Sprintf("#%d", order.ID), productSummary, order.Amount, order.Status, order.EstimatedDeliveryDate}
+			response[i] = orderSummary{
+				ID: order.ID, OrderCode: fmt.Sprintf("#%d", order.ID), ProductSummary: productSummary,
+				CustomerFullName: order.CustomerFullName, CustomerSubmitted: order.CustomerSubmittedAt != nil,
+				ReceiptUploaded: order.ReceiptFilePath != "", HasTrackingCode: order.ShipmentTrackingCode != "",
+				Amount: order.Amount, Status: order.Status, EstimatedDeliveryDate: order.EstimatedDeliveryDate, CreatedAt: order.CreatedAt,
+			}
 		}
 		return c.JSON(http.StatusOK, map[string]any{"orders": response})
 	}
 }
 
-func getOrder(db *gorm.DB) echo.HandlerFunc {
+func getOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		orderID, err := strconv.ParseUint(c.Param("orderID"), 10, 64)
 		if err != nil {
 			return echo.NewHTTPError(http.StatusNotFound, "سفارش پیدا نشد.")
 		}
 		admin := c.Get(adminContextKey).(*Admin)
+		order, err := findAdminOrder(db, admin.ID, uint(orderID))
+		if err != nil {
+			return err
+		}
+		return adminOrderResponse(c, cfg, order)
+	}
+}
+
+func findAdminOrder(db *gorm.DB, adminID, orderID uint) (Order, error) {
+	var order Order
+	err := db.Preload("Shop").Preload("Items.Product").Preload("History", func(query *gorm.DB) *gorm.DB { return query.Order("created_at, id") }).Preload("History.ChangedByAdmin").
+		Joins("JOIN shops ON shops.id = orders.shop_id").Where("orders.id = ? AND shops.owner_admin_id = ?", orderID, adminID).First(&order).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return Order{}, echo.NewHTTPError(http.StatusNotFound, "سفارش پیدا نشد.")
+	}
+	return order, err
+}
+
+func adminOrderResponse(c echo.Context, cfg config, order Order) error {
+	type itemResponse struct {
+		Name      string `json:"name"`
+		ImagePath string `json:"imagePath"`
+		Quantity  int    `json:"quantity"`
+		UnitPrice int64  `json:"unitPrice"`
+	}
+	items := make([]itemResponse, len(order.Items))
+	for i, item := range order.Items {
+		items[i] = itemResponse{item.Product.Name, item.Product.MainImagePath, item.Quantity, item.UnitPrice}
+	}
+	type historyResponse struct {
+		PreviousStatus     string    `json:"previousStatus,omitempty"`
+		NewStatus          string    `json:"newStatus"`
+		ChangedByAdminName string    `json:"changedByAdminName,omitempty"`
+		CreatedAt          time.Time `json:"createdAt"`
+	}
+	history := make([]historyResponse, len(order.History))
+	for i, entry := range order.History {
+		adminName := ""
+		if entry.ChangedByAdmin != nil {
+			adminName = entry.ChangedByAdmin.Name
+		}
+		history[i] = historyResponse{entry.PreviousStatus, entry.NewStatus, adminName, entry.CreatedAt}
+	}
+	response := map[string]any{
+		"id": order.ID, "orderCode": fmt.Sprintf("#%d", order.ID),
+		"shop": map[string]any{"id": order.Shop.ID, "name": order.Shop.Name}, "items": items,
+		"amount": order.Amount, "status": order.Status, "estimatedDeliveryDate": order.EstimatedDeliveryDate,
+		"instagramUsername": order.InstagramUsername, "internalNote": order.InternalNote,
+		"customerFullName": order.CustomerFullName, "customerMobile": order.CustomerMobile,
+		"customerAddress": order.CustomerAddress, "customerPostalCode": order.CustomerPostalCode,
+		"customerNote": order.CustomerNote, "customerSubmitted": order.CustomerSubmittedAt != nil,
+		"receiptUploaded": order.ReceiptFilePath != "", "receiptUploadedAt": order.ReceiptUploadedAt,
+		"shipmentTrackingCode": order.ShipmentTrackingCode, "history": history,
+		"createdAt": order.CreatedAt, "updatedAt": order.UpdatedAt, "customerSubmittedAt": order.CustomerSubmittedAt,
+		"customerUrl": cfg.appOrigin + "/o/" + order.SecretToken,
+	}
+	if order.ReceiptFilePath != "" {
+		response["receiptUrl"] = fmt.Sprintf("/api/orders/%d/receipt", order.ID)
+	}
+	return c.JSON(http.StatusOK, response)
+}
+
+func getOrderReceipt(db *gorm.DB, cfg config) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		orderID, err := strconv.ParseUint(c.Param("orderID"), 10, 64)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusNotFound, "رسید پیدا نشد.")
+		}
+		admin := c.Get(adminContextKey).(*Admin)
 		var order Order
-		err = db.Preload("Items.Product").Joins("JOIN shops ON shops.id = orders.shop_id").Where("orders.id = ? AND shops.owner_admin_id = ?", orderID, admin.ID).First(&order).Error
+		err = db.Joins("JOIN shops ON shops.id = orders.shop_id").Where("orders.id = ? AND shops.owner_admin_id = ?", orderID, admin.ID).First(&order).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return echo.NewHTTPError(http.StatusNotFound, "سفارش پیدا نشد.")
+			return echo.NewHTTPError(http.StatusNotFound, "رسید پیدا نشد.")
 		}
 		if err != nil {
 			return err
 		}
-		type itemResponse struct {
-			Name      string `json:"name"`
-			ImagePath string `json:"imagePath"`
-			Quantity  int    `json:"quantity"`
+		if order.ReceiptFilePath == "" || filepath.Base(order.ReceiptFilePath) != order.ReceiptFilePath {
+			return echo.NewHTTPError(http.StatusNotFound, "رسید پیدا نشد.")
 		}
-		items := make([]itemResponse, len(order.Items))
-		for i, item := range order.Items {
-			items[i] = itemResponse{item.Product.Name, item.Product.MainImagePath, item.Quantity}
+		file, err := os.Open(filepath.Join(cfg.receiptDir, order.ReceiptFilePath))
+		if os.IsNotExist(err) {
+			return echo.NewHTTPError(http.StatusNotFound, "رسید پیدا نشد.")
 		}
-		return c.JSON(http.StatusOK, map[string]any{
-			"id": order.ID, "orderCode": fmt.Sprintf("#%d", order.ID), "items": items,
-			"amount": order.Amount, "status": order.Status,
-			"estimatedDeliveryDate": order.EstimatedDeliveryDate,
-		})
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+		info, err := file.Stat()
+		if err != nil {
+			return err
+		}
+		header := make([]byte, 512)
+		read, err := file.Read(header)
+		if err != nil && !errors.Is(err, io.EOF) {
+			return err
+		}
+		if _, err := file.Seek(0, io.SeekStart); err != nil {
+			return err
+		}
+		contentType := http.DetectContentType(header[:read])
+		if contentType != "image/jpeg" && contentType != "image/png" && contentType != "image/webp" {
+			return echo.NewHTTPError(http.StatusNotFound, "رسید پیدا نشد.")
+		}
+		c.Response().Header().Set(echo.HeaderContentType, contentType)
+		c.Response().Header().Set(echo.HeaderContentDisposition, "inline")
+		c.Response().Header().Set(echo.HeaderCacheControl, "no-store")
+		http.ServeContent(c.Response(), c.Request(), order.ReceiptFilePath, info.ModTime(), file)
+		return nil
 	}
 }
 
@@ -357,18 +571,19 @@ func publicOrderResponse(c echo.Context, status int, order Order) error {
 	submitted := order.CustomerSubmittedAt != nil
 	receiptUploaded := order.ReceiptFilePath != ""
 	return c.JSON(status, map[string]any{
-		"orderCode":             fmt.Sprintf("#%d", order.ID),
-		"shop":                  map[string]any{"name": order.Shop.Name, "logoPath": order.Shop.LogoPath},
-		"items":                 items,
-		"amount":                order.Amount,
-		"status":                order.Status,
-		"estimatedDeliveryDate": order.EstimatedDeliveryDate,
-		"paymentInstructions":   order.Shop.PaymentInstructions,
-		"customerSubmitted":     submitted,
-		"receiptUploaded":       receiptUploaded,
-		"receiptUploadAllowed":  submitted && !receiptUploaded && order.Status != "paid" && order.Status != "cancelled",
-		"shipmentTrackingCode":  order.ShipmentTrackingCode,
-		"updatedAt":             order.UpdatedAt,
+		"orderCode":                 fmt.Sprintf("#%d", order.ID),
+		"shop":                      map[string]any{"name": order.Shop.Name, "logoPath": order.Shop.LogoPath},
+		"items":                     items,
+		"amount":                    order.Amount,
+		"status":                    order.Status,
+		"estimatedDeliveryDate":     order.EstimatedDeliveryDate,
+		"paymentInstructions":       order.Shop.PaymentInstructions,
+		"customerSubmitted":         submitted,
+		"customerSubmissionAllowed": !submitted && order.Status == waitingInfoStatus,
+		"receiptUploaded":           receiptUploaded,
+		"receiptUploadAllowed":      submitted && !receiptUploaded && order.Status != "paid" && order.Status != "cancelled",
+		"shipmentTrackingCode":      order.ShipmentTrackingCode,
+		"updatedAt":                 order.UpdatedAt,
 	})
 }
 

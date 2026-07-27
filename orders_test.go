@@ -1,11 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -227,5 +230,107 @@ func TestCopyEventRequiresOwnership(t *testing.T) {
 	response = request(e, http.MethodPost, "/api/orders", body, testOrigin, cookie)
 	if response.Code != http.StatusConflict {
 		t.Fatalf("cross-admin idempotency collision returned %d: %s", response.Code, response.Body.String())
+	}
+}
+
+func TestOrderOperations(t *testing.T) {
+	db, e, cfg, admin := newAuthTestServer(t)
+	cookie := loginCookie(t, e)
+	order := createCustomerTestOrder(t, db, "operations-token")
+	now := time.Now()
+	if err := db.Model(&order).Updates(map[string]any{
+		"customer_full_name": "سارا احمدی", "customer_mobile": "09123456789",
+		"customer_address": "تهران، خیابان آزمایش", "customer_postal_code": "1234567890",
+		"customer_note": "طبقه دوم", "customer_submitted_at": now,
+		"instagram_username": "sara_shop", "status": waitingPaymentStatus,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&OrderStatusHistory{OrderID: order.ID, PreviousStatus: waitingInfoStatus, NewStatus: waitingPaymentStatus}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	for name, query := range map[string]string{
+		"name":       "سارا",
+		"mobile":     "+۹۸ ۹۱۲ ۳۴۵ ۶۷۸۹",
+		"order code": fmt.Sprintf("#%d", order.ID),
+		"instagram":  "sara_shop",
+	} {
+		t.Run("search "+name, func(t *testing.T) {
+			response := request(e, http.MethodGet, fmt.Sprintf("/api/orders?shopId=%d&q=%s&status=%s", order.ShopID, url.QueryEscape(query), waitingPaymentStatus), "", "", cookie)
+			if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "سارا احمدی") || !strings.Contains(response.Body.String(), `"receiptUploaded":false`) {
+				t.Fatalf("search returned %d: %s", response.Code, response.Body.String())
+			}
+		})
+	}
+	if response := request(e, http.MethodGet, fmt.Sprintf("/api/orders?shopId=%d&status=invalid", order.ShopID), "", "", cookie); response.Code != http.StatusBadRequest {
+		t.Fatalf("invalid status filter returned %d", response.Code)
+	}
+
+	detail := request(e, http.MethodGet, fmt.Sprintf("/api/orders/%d", order.ID), "", "", cookie)
+	if detail.Code != http.StatusOK || !strings.Contains(detail.Body.String(), cfg.appOrigin+"/o/"+order.SecretToken) || !strings.Contains(detail.Body.String(), "customerPostalCode") || !strings.Contains(detail.Body.String(), "history") {
+		t.Fatalf("detail returned %d: %s", detail.Code, detail.Body.String())
+	}
+	update := `{"status":"paid","shipmentTrackingCode":" TRACK-123 ","customerFullName":"سارا محمدی","customerMobile":"+98 912 345 6789","customerAddress":"نشانی اصلاح‌شده","customerPostalCode":"۱۲۳۴۵۶۷۸۹۰","customerNote":"یادداشت جدید"}`
+	response := request(e, http.MethodPatch, fmt.Sprintf("/api/orders/%d", order.ID), update, testOrigin, cookie)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"status":"paid"`) || !strings.Contains(response.Body.String(), `"shipmentTrackingCode":"TRACK-123"`) || !strings.Contains(response.Body.String(), "سارا محمدی") {
+		t.Fatalf("operation update returned %d: %s", response.Code, response.Body.String())
+	}
+	if err := db.First(&order, order.ID).Error; err != nil || order.Status != "paid" || order.CustomerMobile != "09123456789" || order.ShipmentTrackingCode != "TRACK-123" {
+		t.Fatalf("unexpected updated order: %#v, error %v", order, err)
+	}
+	var latest OrderStatusHistory
+	if err := db.Where("order_id = ?", order.ID).Order("id DESC").First(&latest).Error; err != nil || latest.PreviousStatus != waitingPaymentStatus || latest.NewStatus != "paid" || latest.ChangedByAdminID == nil || *latest.ChangedByAdminID != admin.ID {
+		t.Fatalf("unexpected admin history: %#v, error %v", latest, err)
+	}
+	var historyCount int64
+	if err := db.Model(&OrderStatusHistory{}).Where("order_id = ?", order.ID).Count(&historyCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	response = request(e, http.MethodPatch, fmt.Sprintf("/api/orders/%d", order.ID), `{"status":"paid"}`, testOrigin, cookie)
+	if response.Code != http.StatusOK {
+		t.Fatalf("no-op status returned %d: %s", response.Code, response.Body.String())
+	}
+	var afterNoOp int64
+	if err := db.Model(&OrderStatusHistory{}).Where("order_id = ?", order.ID).Count(&afterNoOp).Error; err != nil || afterNoOp != historyCount {
+		t.Fatalf("no-op history count = %d, want %d, error %v", afterNoOp, historyCount, err)
+	}
+	if response := request(e, http.MethodPatch, fmt.Sprintf("/api/orders/%d", order.ID), `{"status":"unknown"}`, testOrigin, cookie); response.Code != http.StatusBadRequest {
+		t.Fatalf("invalid status update returned %d", response.Code)
+	}
+	public := request(e, http.MethodGet, "/api/o/"+order.SecretToken, "", "", nil)
+	if public.Code != http.StatusOK || !strings.Contains(public.Body.String(), `"shipmentTrackingCode":"TRACK-123"`) || strings.Contains(public.Body.String(), `"receiptUploadAllowed":true`) {
+		t.Fatalf("public operation state returned %d: %s", public.Code, public.Body.String())
+	}
+}
+
+func TestProtectedOrderReceipt(t *testing.T) {
+	db, e, cfg, _ := newAuthTestServer(t)
+	cookie := loginCookie(t, e)
+	order := createCustomerTestOrder(t, db, "admin-receipt-token")
+	content := append([]byte("\x89PNG\r\n\x1a\n"), bytes.Repeat([]byte{0}, 32)...)
+	if err := os.MkdirAll(cfg.receiptDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfg.receiptDir, "receipt.png"), content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&order).Update("receipt_file_path", "receipt.png").Error; err != nil {
+		t.Fatal(err)
+	}
+	path := fmt.Sprintf("/api/orders/%d/receipt", order.ID)
+	if response := request(e, http.MethodGet, path, "", "", nil); response.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated receipt returned %d", response.Code)
+	}
+	response := request(e, http.MethodGet, path, "", "", cookie)
+	if response.Code != http.StatusOK || !bytes.Equal(response.Body.Bytes(), content) || response.Header().Get("Content-Type") != "image/png" || response.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("receipt returned %d, type %q, cache %q", response.Code, response.Header().Get("Content-Type"), response.Header().Get("Cache-Control"))
+	}
+	other := createOtherOrder(t, db)
+	if err := db.Model(&other).Update("receipt_file_path", "receipt.png").Error; err != nil {
+		t.Fatal(err)
+	}
+	if response := request(e, http.MethodGet, fmt.Sprintf("/api/orders/%d/receipt", other.ID), "", "", cookie); response.Code != http.StatusNotFound {
+		t.Fatalf("cross-shop receipt returned %d", response.Code)
 	}
 }

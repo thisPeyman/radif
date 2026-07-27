@@ -53,6 +53,7 @@ type Order struct {
 	ShopID                uint   `gorm:"not null;index"`
 	Shop                  Shop
 	Items                 []OrderItem
+	History               []OrderStatusHistory
 	Amount                int64  `gorm:"not null"`
 	EstimatedDeliveryDate string `gorm:"not null"`
 	InstagramUsername     string

@@ -70,20 +70,8 @@ func parseCustomerDetails(c echo.Context) (customerDetails, *multipart.FileHeade
 		postalCode: normalizeDigits(c.FormValue("postalCode")),
 		note:       strings.TrimSpace(c.FormValue("note")),
 	}
-	if details.fullName == "" || utf8.RuneCountInString(details.fullName) > 150 {
-		return customerDetails{}, nil, echo.NewHTTPError(http.StatusBadRequest, "نام و نام خانوادگی را کامل وارد کنید.")
-	}
-	if len(details.mobile) != 11 || !strings.HasPrefix(details.mobile, "09") {
-		return customerDetails{}, nil, echo.NewHTTPError(http.StatusBadRequest, "شماره موبایل معتبر ایرانی وارد کنید.")
-	}
-	if details.address == "" || utf8.RuneCountInString(details.address) > 2000 {
-		return customerDetails{}, nil, echo.NewHTTPError(http.StatusBadRequest, "نشانی کامل را وارد کنید.")
-	}
-	if details.postalCode != "" && len(details.postalCode) != 10 {
-		return customerDetails{}, nil, echo.NewHTTPError(http.StatusBadRequest, "کد پستی باید ۱۰ رقم باشد.")
-	}
-	if utf8.RuneCountInString(details.note) > 1000 {
-		return customerDetails{}, nil, echo.NewHTTPError(http.StatusBadRequest, "یادداشت بیش از حد طولانی است.")
+	if err := validateCustomerDetails(details); err != nil {
+		return customerDetails{}, nil, err
 	}
 	files := c.Request().MultipartForm.File["receipt"]
 	if len(files) > 1 {
@@ -93,6 +81,25 @@ func parseCustomerDetails(c echo.Context) (customerDetails, *multipart.FileHeade
 		return details, files[0], nil
 	}
 	return details, nil, nil
+}
+
+func validateCustomerDetails(details customerDetails) error {
+	if details.fullName == "" || utf8.RuneCountInString(details.fullName) > 150 {
+		return echo.NewHTTPError(http.StatusBadRequest, "نام و نام خانوادگی را کامل وارد کنید.")
+	}
+	if len(details.mobile) != 11 || !strings.HasPrefix(details.mobile, "09") {
+		return echo.NewHTTPError(http.StatusBadRequest, "شماره موبایل معتبر ایرانی وارد کنید.")
+	}
+	if details.address == "" || utf8.RuneCountInString(details.address) > 2000 {
+		return echo.NewHTTPError(http.StatusBadRequest, "نشانی کامل را وارد کنید.")
+	}
+	if details.postalCode != "" && len(details.postalCode) != 10 {
+		return echo.NewHTTPError(http.StatusBadRequest, "کد پستی باید ۱۰ رقم باشد.")
+	}
+	if utf8.RuneCountInString(details.note) > 1000 {
+		return echo.NewHTTPError(http.StatusBadRequest, "یادداشت بیش از حد طولانی است.")
+	}
+	return nil
 }
 
 func prepareReceipt(cfg config, fileHeader *multipart.FileHeader) (*pendingReceipt, error) {
@@ -219,7 +226,7 @@ func submitCustomerDetails(db *gorm.DB, cfg config) echo.HandlerFunc {
 				updates["receipt_file_path"] = receipt.storedName
 				updates["receipt_uploaded_at"] = now
 			}
-			result := tx.Model(&Order{}).Where("id = ? AND customer_submitted_at IS NULL", order.ID).Updates(updates)
+			result := tx.Model(&Order{}).Where("id = ? AND customer_submitted_at IS NULL AND status = ?", order.ID, waitingInfoStatus).Updates(updates)
 			if result.Error != nil {
 				return result.Error
 			}

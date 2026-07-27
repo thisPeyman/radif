@@ -13,10 +13,11 @@ import {
   Plus,
   RotateCcw,
   Store,
+  Search,
   Upload,
   UserRound,
 } from "lucide-react";
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useDeferredValue, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
   Navigate,
   NavLink,
@@ -25,6 +26,7 @@ import {
   useLocation,
   useNavigate,
   useParams,
+  useSearchParams,
 } from "react-router";
 
 type Shop = {
@@ -70,14 +72,53 @@ type PublicOrder = {
   estimatedDeliveryDate: string;
   paymentInstructions: string;
   customerSubmitted: boolean;
+  customerSubmissionAllowed: boolean;
   receiptUploaded: boolean;
   receiptUploadAllowed: boolean;
   shipmentTrackingCode?: string;
   updatedAt: string;
 };
 
-type AdminOrder = Pick<PublicOrder, "orderCode" | "items" | "amount" | "status" | "estimatedDeliveryDate"> & { id: number };
-type OrderSummary = Omit<AdminOrder, "items"> & { productSummary: string };
+type OrderSummary = {
+  id: number;
+  orderCode: string;
+  productSummary: string;
+  customerFullName?: string;
+  customerSubmitted: boolean;
+  receiptUploaded: boolean;
+  hasTrackingCode: boolean;
+  amount: number;
+  status: string;
+  estimatedDeliveryDate: string;
+  createdAt: string;
+};
+
+type AdminOrder = {
+  id: number;
+  orderCode: string;
+  shop: { id: number; name: string };
+  items: { name: string; imagePath: string; quantity: number; unitPrice: number }[];
+  amount: number;
+  status: string;
+  estimatedDeliveryDate: string;
+  instagramUsername: string;
+  internalNote: string;
+  customerFullName: string;
+  customerMobile: string;
+  customerAddress: string;
+  customerPostalCode: string;
+  customerNote: string;
+  customerSubmitted: boolean;
+  receiptUploaded: boolean;
+  receiptUploadedAt?: string;
+  receiptUrl?: string;
+  shipmentTrackingCode: string;
+  customerUrl: string;
+  createdAt: string;
+  updatedAt: string;
+  customerSubmittedAt?: string;
+  history: { previousStatus?: string; newStatus: string; changedByAdminName?: string; createdAt: string }[];
+};
 
 class ApiError extends Error {
   status: number;
@@ -107,6 +148,8 @@ async function api<T>(path: string, options?: RequestInit): Promise<T> {
 
 const numberFormat = new Intl.NumberFormat("fa-IR");
 const dateFormat = new Intl.DateTimeFormat("fa-IR", { dateStyle: "long", timeZone: "UTC" });
+const dateTimeFormat = new Intl.DateTimeFormat("fa-IR", { dateStyle: "long", timeStyle: "short" });
+const relativeTimeFormat = new Intl.RelativeTimeFormat("fa-IR", { numeric: "auto" });
 const tehranDateFormat = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Tehran", year: "numeric", month: "2-digit", day: "2-digit" });
 const persianDatePartsFormat = new Intl.DateTimeFormat("fa-IR-u-ca-persian-nu-latn", { timeZone: "UTC", year: "numeric", month: "numeric", day: "numeric" });
 const latinDigits = "0123456789";
@@ -160,6 +203,18 @@ function todayISO() {
 
 function persianDate(value: string) {
   return value ? dateFormat.format(new Date(`${value}T12:00:00Z`)) : "";
+}
+
+function persianDateTime(value?: string) {
+  return value ? dateTimeFormat.format(new Date(value)) : "";
+}
+
+function relativeAge(value: string) {
+  const minutes = Math.round((new Date(value).getTime() - Date.now()) / 60000);
+  if (Math.abs(minutes) < 60) return relativeTimeFormat.format(minutes, "minute");
+  const hours = Math.round(minutes / 60);
+  if (Math.abs(hours) < 24) return relativeTimeFormat.format(hours, "hour");
+  return relativeTimeFormat.format(Math.round(hours / 24), "day");
 }
 
 type DateChoice = { iso: string; year: number; month: number; day: number };
@@ -402,7 +457,7 @@ function BottomNavigation({ disabled }: { disabled: boolean }) {
           className={({ isActive }) => `nav-item ${isActive ? "nav-item-active" : ""} ${disabled ? "pointer-events-none opacity-45" : ""}`}
           aria-disabled={disabled}
           onClick={(event) => { if (disabled) event.preventDefault(); }}
-          end
+          end={to !== "/orders"}
         >
           <Icon className="size-5" strokeWidth={2} aria-hidden="true" />
           <span>{label}</span>
@@ -417,12 +472,25 @@ function OrdersPage({ shop }: { shop: Shop }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [reload, setReload] = useState(0);
+  const [params, setParams] = useSearchParams();
+  const search = params.get("q") ?? "";
+  const status = params.get("status") ?? "";
+  const deferredSearch = useDeferredValue(search);
+
+  function setFilter(name: "q" | "status", value: string) {
+    const next = new URLSearchParams(params);
+    if (value) next.set(name, value); else next.delete(name);
+    setParams(next, { replace: true });
+  }
 
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
     setError("");
-    api<{ orders: OrderSummary[] }>(`/api/orders?shopId=${shop.id}`, { signal: controller.signal })
+    const query = new URLSearchParams({ shopId: String(shop.id) });
+    if (deferredSearch) query.set("q", deferredSearch);
+    if (status) query.set("status", status);
+    api<{ orders: OrderSummary[] }>(`/api/orders?${query}`, { signal: controller.signal })
       .then((response) => setOrders(response.orders))
       .catch((reason) => {
         if (reason instanceof DOMException && reason.name === "AbortError") return;
@@ -430,46 +498,53 @@ function OrdersPage({ shop }: { shop: Shop }) {
       })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [shop.id, reload]);
+  }, [deferredSearch, shop.id, status, reload]);
 
-  if (loading) return <div className="grid min-h-[65dvh] place-items-center"><LoaderCircle className="size-7 animate-spin text-teal" aria-label="در حال دریافت سفارش‌ها" /></div>;
-  if (error) return <section className="page-content"><ErrorNotice retry={() => setReload((value) => value + 1)}>{error}</ErrorNotice></section>;
-  if (orders.length > 0) {
-    return (
-      <section className="page-content">
-        <p className="page-kicker">{shop.name}</p>
-        <h1 className="page-title">سفارش‌ها</h1>
-        <div className="mt-6 space-y-3">
+  return (
+    <section className="page-content">
+      <p className="page-kicker">{shop.name}</p>
+      <h1 className="page-title">سفارش‌ها</h1>
+      <label className="relative mt-5 block">
+        <Search className="pointer-events-none absolute right-4 top-4 size-5 text-ink/55" aria-hidden="true" />
+        <input className="field pr-12" type="search" value={search} onChange={(event) => setFilter("q", event.target.value)} placeholder="نام، موبایل، کد سفارش یا اینستاگرام" aria-label="جستجوی سفارش" />
+      </label>
+      <div className="-mx-5 mt-3 flex gap-2 overflow-x-auto px-5 pb-2" aria-label="فیلتر وضعیت">
+        {["", ...Object.keys(adminStatusLabels)].map((value) => (
+          <button className={`min-h-11 shrink-0 rounded-full border px-4 text-sm font-bold ${status === value ? "border-ink bg-ink text-white" : "border-ledger bg-white text-ink"}`} key={value || "all"} type="button" onClick={() => setFilter("status", value)}>
+            {value ? adminStatusLabels[value] : "همه"}
+          </button>
+        ))}
+      </div>
+      {loading && <div className="grid min-h-40 place-items-center"><LoaderCircle className="size-7 animate-spin text-teal" aria-label="در حال دریافت سفارش‌ها" /></div>}
+      {!loading && error && <div className="mt-5"><ErrorNotice retry={() => setReload((value) => value + 1)}>{error}</ErrorNotice></div>}
+      {!loading && !error && orders.length > 0 && (
+        <div className="mt-4 space-y-3">
           {orders.map((order) => (
-            <NavLink className="block border-r-4 border-teal rounded-2xl bg-white p-4 shadow-sm no-underline text-ink" key={order.id} to={`/orders/${order.id}`}>
+            <NavLink className={`block rounded-2xl border-r-4 bg-white p-4 text-ink no-underline shadow-sm ${statusStyles[order.status]?.rail ?? "border-ink"}`} key={order.id} to={`/orders/${order.id}${params.toString() ? `?${params}` : ""}`}>
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-xs font-bold text-ink/70">{order.orderCode.replace(/\d/g, (digit) => persianDigits[Number(digit)])}</p>
+                  <p className="text-xs font-bold text-ink/70">{order.orderCode.replace(/\d/g, (digit) => persianDigits[Number(digit)])} · {relativeAge(order.createdAt)}</p>
                   <p className="mt-1 truncate font-black">{order.productSummary}</p>
+                  <p className={`mt-1 truncate text-sm font-bold ${order.customerSubmitted ? "text-ink/75" : "text-error"}`}>{order.customerSubmitted ? order.customerFullName : "اطلاعات مشتری ثبت نشده"}</p>
                 </div>
-                <span className="rounded-full bg-ledger px-3 py-1 text-xs font-bold text-teal">{statusLabels[order.status] ?? order.status}</span>
+                <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${statusStyles[order.status]?.chip ?? "bg-ledger"}`}>{adminStatusLabels[order.status] ?? order.status}</span>
               </div>
               <div className="mt-4 flex items-end justify-between gap-3 border-t border-ledger pt-3 text-sm">
                 <span><span className="block text-xs text-ink/70">تحویل تخمینی</span><strong>{persianDate(order.estimatedDeliveryDate)}</strong></span>
-                <strong>{persianNumber(order.amount)} تومان</strong>
+                <span className="text-left"><strong>{persianNumber(order.amount)} تومان</strong><span className="mt-1 flex justify-end gap-2 text-xs text-ink/65">{order.receiptUploaded && <span>رسید دارد</span>}{order.hasTrackingCode && <span>کد رهگیری دارد</span>}</span></span>
               </div>
             </NavLink>
           ))}
         </div>
-      </section>
-    );
-  }
-  return (
-    <section className="page-content flex min-h-[65dvh] flex-col justify-center text-center">
-      <span className="mx-auto grid size-16 place-items-center rounded-3xl bg-ledger text-teal">
-        <ClipboardList className="size-8" strokeWidth={1.7} aria-hidden="true" />
-      </span>
-      <h1 className="mt-5 text-2xl font-black">سفارش‌ها، مرتب و یک‌جا</h1>
-      <p className="mx-auto mt-2 max-w-xs text-sm leading-7 text-ink/70">از سفارش جدید شروع کنید؛ لینک مشتری همان لحظه آماده می‌شود.</p>
-      <NavLink className="primary-button mx-auto mt-7" to="/orders/new">
-        <Plus className="size-5" aria-hidden="true" />
-        ساخت سفارش جدید
-      </NavLink>
+      )}
+      {!loading && !error && orders.length === 0 && (
+        <div className="flex min-h-72 flex-col justify-center text-center">
+          <ClipboardList className="mx-auto size-10 text-teal" aria-hidden="true" />
+          <h2 className="mt-4 text-xl font-black">{search || status ? "سفارشی با این فیلتر پیدا نشد" : "هنوز سفارشی ساخته نشده"}</h2>
+          <p className="mt-2 text-sm text-ink/70">{search || status ? "عبارت جستجو یا وضعیت را تغییر دهید." : "از سفارش جدید شروع کنید."}</p>
+          {!search && !status && <NavLink className="primary-button mx-auto mt-6" to="/orders/new"><Plus className="size-5" />ساخت سفارش جدید</NavLink>}
+        </div>
+      )}
     </section>
   );
 }
@@ -523,13 +598,23 @@ function ProductImage({ product }: { product: Product }) {
   );
 }
 
-const statusLabels: Record<string, string> = {
+const publicStatusLabels: Record<string, string> = {
   waiting_info: "در انتظار اطلاعات شما",
   waiting_payment: "در انتظار پرداخت",
   paid: "پرداخت شده",
   preparing: "در حال آماده‌سازی",
   shipped: "ارسال شده",
   cancelled: "لغو شده",
+};
+
+const adminStatusLabels: Record<string, string> = { ...publicStatusLabels, waiting_info: "در انتظار اطلاعات مشتری" };
+const statusStyles: Record<string, { rail: string; chip: string }> = {
+  waiting_info: { rail: "border-saffron", chip: "bg-saffron/15 text-ink" },
+  waiting_payment: { rail: "border-saffron", chip: "bg-saffron/15 text-ink" },
+  paid: { rail: "border-teal", chip: "bg-teal/12 text-teal" },
+  preparing: { rail: "border-ink", chip: "bg-ledger text-ink" },
+  shipped: { rail: "border-teal", chip: "bg-teal text-white" },
+  cancelled: { rail: "border-error", chip: "bg-error/10 text-error" },
 };
 
 function PublicOrderPage() {
@@ -666,7 +751,7 @@ function PublicOrderPage() {
 
           <section className="mt-7 border-r-4 border-teal bg-white px-5 py-4 shadow-sm">
             <p className="text-xs font-bold text-ink/70">وضعیت سفارش</p>
-            <p className="mt-1 text-lg font-black text-teal">{statusLabels[order.status] ?? order.status}</p>
+            <p className="mt-1 text-lg font-black text-teal">{publicStatusLabels[order.status] ?? order.status}</p>
           </section>
 
           <section className="mt-4 rounded-3xl border border-saffron/45 bg-saffron/10 p-5">
@@ -707,7 +792,7 @@ function PublicOrderPage() {
             {copyState === "failed" && <p className="mt-2 text-sm text-error" role="alert">کپی خودکار ممکن نشد؛ متن بالا را انتخاب و کپی کنید.</p>}
           </section>
 
-          {!order.customerSubmitted && (
+          {order.customerSubmissionAllowed && (
             <form className="mt-8 space-y-5" onSubmit={submitDetails} noValidate>
               <div>
                 <h2 className="text-xl font-black">اطلاعات تحویل</h2>
@@ -750,6 +835,13 @@ function PublicOrderPage() {
             </form>
           )}
 
+          {!order.customerSubmitted && !order.customerSubmissionAllowed && (
+            <section className="mt-7 rounded-3xl border border-error/25 bg-error/8 p-5">
+              <h2 className="font-black">ثبت اطلاعات این سفارش بسته شده است</h2>
+              <p className="mt-2 text-sm leading-7 text-ink/70">برای پیگیری یا اصلاح سفارش با فروشگاه تماس بگیرید.</p>
+            </section>
+          )}
+
           {order.customerSubmitted && (
             <section className="mt-7 rounded-3xl border border-teal/25 bg-teal/8 p-5" aria-live="polite">
               <div className="flex items-center gap-3">
@@ -778,12 +870,31 @@ function PublicOrderPage() {
   );
 }
 
+function CopyButton({ value, label }: { value: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setCopied(false);
+    }
+  }
+  return <button className="inline-flex min-h-11 items-center gap-2 px-2 text-sm font-black text-teal" type="button" onClick={copy}><Clipboard className="size-4" aria-hidden="true" />{copied ? "کپی شد" : label}</button>;
+}
+
 function AdminOrderPage() {
   const { orderID = "" } = useParams();
+  const location = useLocation();
   const [order, setOrder] = useState<AdminOrder | null>(null);
   const [date, setDate] = useState("");
+  const [status, setStatus] = useState("");
+  const [tracking, setTracking] = useState("");
+  const [customer, setCustomer] = useState<CustomerDraft>(emptyCustomerDraft);
+  const [editingCustomer, setEditingCustomer] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [pending, setPending] = useState(false);
+  const [saving, setSaving] = useState<"" | "status" | "date" | "tracking" | "customer">("");
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -792,7 +903,13 @@ function AdminOrderPage() {
     setOrder(null);
     setError("");
     api<AdminOrder>(`/api/orders/${encodeURIComponent(orderID)}`, { signal: controller.signal })
-      .then((response) => { setOrder(response); setDate(response.estimatedDeliveryDate); })
+      .then((response) => {
+        setOrder(response);
+        setDate(response.estimatedDeliveryDate);
+        setStatus(response.status);
+        setTracking(response.shipmentTrackingCode);
+        setCustomer({ fullName: response.customerFullName, mobile: response.customerMobile, address: response.customerAddress, postalCode: response.customerPostalCode, note: response.customerNote });
+      })
       .catch((reason) => {
         if (reason instanceof DOMException && reason.name === "AbortError") return;
         setError(reason instanceof Error ? reason.message : "سفارش دریافت نشد.");
@@ -801,25 +918,44 @@ function AdminOrderPage() {
     return () => controller.abort();
   }, [orderID]);
 
-  async function saveDate() {
-    if (!order || !date || date < todayISO()) {
-      setError("تاریخ تحویل را برای امروز یا یکی از روزهای بعد انتخاب کنید.");
-      return;
-    }
-    setPending(true);
+  async function saveChanges(section: "status" | "date" | "tracking" | "customer", changes: Record<string, string>) {
+    if (!order) return;
+    setSaving(section);
     setError("");
     try {
-      const response = await api<{ estimatedDeliveryDate: string }>(`/api/orders/${order.id}`, {
+      const response = await api<AdminOrder>(`/api/orders/${order.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ estimatedDeliveryDate: date }),
+        body: JSON.stringify(changes),
       });
-      setOrder({ ...order, estimatedDeliveryDate: response.estimatedDeliveryDate });
+      setOrder(response);
+      setDate(response.estimatedDeliveryDate);
+      setStatus(response.status);
+      setTracking(response.shipmentTrackingCode);
+      setCustomer({ fullName: response.customerFullName, mobile: response.customerMobile, address: response.customerAddress, postalCode: response.customerPostalCode, note: response.customerNote });
+      if (section === "customer") setEditingCustomer(false);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "تاریخ تحویل تغییر نکرد.");
+      setError(reason instanceof Error ? reason.message : "تغییرات ذخیره نشد.");
     } finally {
-      setPending(false);
+      setSaving("");
     }
+  }
+
+  function saveCustomer(event: FormEvent) {
+    event.preventDefault();
+    const mobile = normalizeIranianMobile(customer.mobile);
+    const postalCode = normalizeDigits(customer.postalCode);
+    if (!customer.fullName.trim() || !customer.address.trim() || !/^09\d{9}$/.test(mobile) || (postalCode !== "" && !/^\d{10}$/.test(postalCode))) {
+      setError("نام، شماره موبایل، نشانی و کد پستی را بررسی کنید.");
+      return;
+    }
+    void saveChanges("customer", { customerFullName: customer.fullName, customerMobile: mobile, customerAddress: customer.address, customerPostalCode: postalCode, customerNote: customer.note });
+  }
+
+  function cancelCustomerEdit() {
+    if (!order) return;
+    setCustomer({ fullName: order.customerFullName, mobile: order.customerMobile, address: order.customerAddress, postalCode: order.customerPostalCode, note: order.customerNote });
+    setEditingCustomer(false);
   }
 
   if (loading) return <div className="grid min-h-[65dvh] place-items-center"><LoaderCircle className="size-7 animate-spin text-teal" aria-label="در حال دریافت سفارش" /></div>;
@@ -827,22 +963,85 @@ function AdminOrderPage() {
 
   return (
     <section className="page-content">
-      <p className="page-kicker">{order.orderCode.replace(/\d/g, (digit) => persianDigits[Number(digit)])}</p>
-      <h1 className="page-title">جزئیات سفارش</h1>
-      <div className="mt-6 rounded-3xl border border-ledger bg-white p-5">
-        <p className="text-sm font-black">تاریخ تخمینی تحویل</p>
+      <NavLink className="inline-flex min-h-11 items-center text-sm font-black text-teal" to={`/orders${location.search}`}>بازگشت به سفارش‌ها</NavLink>
+      <p className="page-kicker mt-2">{order.orderCode.replace(/\d/g, (digit) => persianDigits[Number(digit)])} · {order.shop.name}</p>
+      <h1 className="page-title">عملیات سفارش</h1>
+      {error && <div className="mt-4"><ErrorNotice>{error}</ErrorNotice></div>}
+
+      <section className={`mt-5 rounded-3xl border-r-4 bg-white p-5 shadow-sm ${statusStyles[order.status]?.rail ?? "border-ink"}`}>
+        <label className="text-sm font-black" htmlFor="admin-order-status">وضعیت سفارش</label>
+        <select id="admin-order-status" className="field mt-2" value={status} onChange={(event) => setStatus(event.target.value)}>
+          {Object.entries(adminStatusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        </select>
+        <button className="primary-button mt-3 w-full" type="button" onClick={() => saveChanges("status", { status })} disabled={Boolean(saving) || status === order.status}>
+          {saving === "status" && <LoaderCircle className="size-5 animate-spin" />}{saving === "status" ? "در حال ذخیره…" : "ثبت وضعیت"}
+        </button>
+      </section>
+
+      <section className="mt-5 rounded-3xl border border-ledger bg-white p-5">
+        <div className="flex items-center justify-between"><h2 className="font-black">مشتری و تحویل</h2>{order.customerSubmitted && !editingCustomer && <button className="min-h-11 px-2 text-sm font-black text-teal" type="button" onClick={() => setEditingCustomer(true)}>اصلاح اطلاعات</button>}</div>
+        {!order.customerSubmitted && <p className="mt-3 text-sm font-bold text-error">مشتری هنوز اطلاعات تحویل را ثبت نکرده است.</p>}
+        {order.customerSubmitted && !editingCustomer && (
+          <div className="mt-3 space-y-4 text-sm">
+            <div><p className="text-xs font-bold text-ink/60">نام مشتری</p><p className="mt-1 font-black">{order.customerFullName}</p></div>
+            <div><p className="text-xs font-bold text-ink/60">شماره موبایل</p><div className="flex items-center justify-between gap-2"><span dir="ltr" className="font-bold">{order.customerMobile}</span><CopyButton value={order.customerMobile} label="کپی" /></div></div>
+            <div><p className="text-xs font-bold text-ink/60">نشانی</p><p className="mt-1 whitespace-pre-wrap leading-7">{order.customerAddress}</p><CopyButton value={order.customerAddress} label="کپی نشانی" /></div>
+            {order.customerPostalCode && <div><p className="text-xs font-bold text-ink/60">کد پستی</p><p className="mt-1 font-bold" dir="ltr">{order.customerPostalCode}</p></div>}
+            {order.customerNote && <div><p className="text-xs font-bold text-ink/60">یادداشت مشتری</p><p className="mt-1 whitespace-pre-wrap leading-7">{order.customerNote}</p></div>}
+          </div>
+        )}
+        {order.customerSubmitted && editingCustomer && (
+          <form className="mt-3 space-y-3" onSubmit={saveCustomer}>
+            <input className="field" value={customer.fullName} onChange={(event) => setCustomer({ ...customer, fullName: event.target.value })} aria-label="نام مشتری" />
+            <input className="field" type="tel" dir="ltr" value={customer.mobile} onChange={(event) => setCustomer({ ...customer, mobile: event.target.value })} aria-label="شماره موبایل مشتری" />
+            <textarea className="field min-h-28 py-3" value={customer.address} onChange={(event) => setCustomer({ ...customer, address: event.target.value })} aria-label="نشانی مشتری" />
+            <input className="field" inputMode="numeric" dir="ltr" value={customer.postalCode} onChange={(event) => setCustomer({ ...customer, postalCode: event.target.value })} aria-label="کد پستی" placeholder="کد پستی اختیاری" />
+            <textarea className="field min-h-20 py-3" value={customer.note} onChange={(event) => setCustomer({ ...customer, note: event.target.value })} aria-label="یادداشت مشتری" placeholder="یادداشت اختیاری" />
+            <div className="grid grid-cols-2 gap-2"><button className="secondary-button" type="button" onClick={cancelCustomerEdit}>انصراف</button><button className="primary-button" disabled={Boolean(saving)}>{saving === "customer" ? "در حال ذخیره…" : "ذخیره"}</button></div>
+          </form>
+        )}
+      </section>
+
+      <section className="mt-5 rounded-3xl border border-ledger bg-white p-5">
+        <h2 className="font-black">رسید پرداخت</h2>
+        {order.receiptUploaded && order.receiptUrl ? <><img className="mt-4 max-h-96 w-full rounded-2xl bg-ledger object-contain" src={order.receiptUrl} alt="رسید پرداخت مشتری" /><a className="secondary-button mt-3 w-full" href={order.receiptUrl} target="_blank" rel="noreferrer">نمایش در اندازه کامل</a></> : <p className="mt-3 text-sm text-ink/65">رسیدی بارگذاری نشده است.</p>}
+      </section>
+
+      <section className="mt-5 rounded-3xl border border-ledger bg-white p-5">
+        <h2 className="font-black">محصول‌ها و مبلغ</h2>
+        <div className="mt-3 divide-y divide-ledger">{order.items.map((item) => <div className="flex items-center justify-between gap-3 py-3" key={item.name}><span className="font-bold">{item.name} × {persianNumber(item.quantity)}</span><span className="text-sm">{persianNumber(item.unitPrice)} تومان</span></div>)}</div>
+        <div className="mt-3 flex justify-between border-t border-ink/15 pt-4"><span className="font-bold">مبلغ سفارش</span><strong>{persianNumber(order.amount)} تومان</strong></div>
+      </section>
+
+      <section className="mt-5 rounded-3xl border border-ledger bg-white p-5">
+        <h2 className="font-black">تحویل و ارسال</h2>
+        <p className="mt-4 text-sm font-bold">تاریخ تخمینی تحویل</p>
         <div className="mt-2"><DeliveryDateSelect id="order-delivery-date" value={date} onChange={setDate} /></div>
         <p className="mt-2 text-sm text-ink/70">{date ? persianDate(date) : "تاریخ را انتخاب کنید."}</p>
-        {error && <div className="mt-3"><ErrorNotice>{error}</ErrorNotice></div>}
-        <button className="primary-button mt-4 w-full" type="button" onClick={saveDate} disabled={pending || date === order.estimatedDeliveryDate}>
-          {pending && <LoaderCircle className="size-5 animate-spin" aria-hidden="true" />}
-          {pending ? "در حال ذخیره…" : "ذخیره تاریخ تحویل"}
-        </button>
-      </div>
-      <div className="mt-5 flex items-center justify-between rounded-2xl bg-ledger/70 px-4 py-3">
-        <span className="text-sm font-bold">مبلغ سفارش</span>
-        <strong>{persianNumber(order.amount)} تومان</strong>
-      </div>
+        <button className="secondary-button mt-3 w-full" type="button" onClick={() => saveChanges("date", { estimatedDeliveryDate: date })} disabled={Boolean(saving) || !date || date === order.estimatedDeliveryDate}>{saving === "date" ? "در حال ذخیره…" : "ذخیره تاریخ"}</button>
+        <label className="mt-5 block text-sm font-bold" htmlFor="tracking-code">کد رهگیری مرسوله</label>
+        <input id="tracking-code" className="field mt-2" dir="ltr" value={tracking} onChange={(event) => setTracking(event.target.value)} placeholder="اختیاری" />
+        {tracking && <div className="mt-1 text-left"><CopyButton value={tracking} label="کپی کد رهگیری" /></div>}
+        <button className="secondary-button mt-2 w-full" type="button" onClick={() => saveChanges("tracking", { shipmentTrackingCode: tracking })} disabled={Boolean(saving) || tracking === order.shipmentTrackingCode}>{saving === "tracking" ? "در حال ذخیره…" : "ذخیره کد رهگیری"}</button>
+      </section>
+
+      <section className="mt-5 rounded-3xl border border-saffron/40 bg-saffron/8 p-5">
+        <h2 className="font-black">اطلاعات داخلی</h2>
+        <div className="mt-3 text-sm"><p className="text-xs font-bold text-ink/60">اینستاگرام</p><p className="mt-1 font-bold" dir="ltr">{order.instagramUsername ? `@${order.instagramUsername}` : "ثبت نشده"}</p></div>
+        <div className="mt-4"><p className="text-xs font-bold text-ink/60">یادداشت داخلی</p><p className="mt-1 whitespace-pre-wrap text-sm leading-7">{order.internalNote || "یادداشتی ثبت نشده است."}</p></div>
+      </section>
+
+      <section className="mt-5 rounded-3xl border border-ledger bg-white p-5">
+        <h2 className="font-black">لینک مشتری</h2>
+        <p className="mt-3 break-all text-left text-xs" dir="ltr">{order.customerUrl}</p>
+        <CopyButton value={order.customerUrl} label="کپی لینک مشتری" />
+      </section>
+
+      <section className="mt-5 rounded-3xl border border-ledger bg-white p-5">
+        <h2 className="font-black">تاریخچه وضعیت</h2>
+        <ol className="mt-4 border-r-2 border-ledger pr-5">{order.history.map((entry, index) => <li className="relative pb-5 last:pb-0" key={`${entry.createdAt}-${index}`}><span className="absolute -right-[1.7rem] top-1 size-3 rounded-full bg-teal" /><p className="font-bold">{adminStatusLabels[entry.newStatus] ?? entry.newStatus}</p><p className="mt-1 text-xs text-ink/60">{persianDateTime(entry.createdAt)}{entry.changedByAdminName ? ` · ${entry.changedByAdminName}` : ""}</p></li>)}</ol>
+        <p className="mt-5 border-t border-ledger pt-4 text-xs text-ink/60">ساخته‌شده: {persianDateTime(order.createdAt)} · آخرین تغییر: {persianDateTime(order.updatedAt)}</p>
+      </section>
     </section>
   );
 }
