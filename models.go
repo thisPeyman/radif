@@ -46,27 +46,29 @@ type Product struct {
 }
 
 type Order struct {
-	ID                   uint   `gorm:"primaryKey"`
-	CreateKey            string `gorm:"not null;uniqueIndex"`
-	SecretToken          string `gorm:"not null;uniqueIndex"`
-	ShopID               uint   `gorm:"not null;index"`
-	Shop                 Shop
-	Items                []OrderItem
-	Amount               int64 `gorm:"not null"`
-	InstagramUsername    string
-	InternalNote         string
-	CustomerFullName     string
-	CustomerMobile       string
-	CustomerAddress      string
-	CustomerPostalCode   string
-	CustomerNote         string
-	ReceiptFilePath      string
-	ReceiptUploadedAt    *time.Time
-	Status               string `gorm:"not null;index"`
-	ShipmentTrackingCode string
-	CustomerSubmittedAt  *time.Time
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
+	ID                    uint   `gorm:"primaryKey"`
+	CreateKey             string `gorm:"not null;uniqueIndex"`
+	CreateFingerprint     string `gorm:"not null"`
+	SecretToken           string `gorm:"not null;uniqueIndex"`
+	ShopID                uint   `gorm:"not null;index"`
+	Shop                  Shop
+	Items                 []OrderItem
+	Amount                int64  `gorm:"not null"`
+	EstimatedDeliveryDate string `gorm:"not null"`
+	InstagramUsername     string
+	InternalNote          string
+	CustomerFullName      string
+	CustomerMobile        string
+	CustomerAddress       string
+	CustomerPostalCode    string
+	CustomerNote          string
+	ReceiptFilePath       string
+	ReceiptUploadedAt     *time.Time
+	Status                string `gorm:"not null;index"`
+	ShipmentTrackingCode  string
+	CustomerSubmittedAt   *time.Time
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
 }
 
 type OrderItem struct {

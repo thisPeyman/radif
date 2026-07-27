@@ -28,7 +28,7 @@ func openDatabase(path string) (*gorm.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
-	if db.Migrator().HasColumn("orders", "product_id") {
+	if db.Migrator().HasTable("orders") && (db.Migrator().HasColumn("orders", "product_id") || !db.Migrator().HasColumn("orders", "estimated_delivery_date") || !db.Migrator().HasColumn("orders", "create_fingerprint")) {
 		for _, table := range []string{"order_items", "order_status_histories", "pilot_events", "orders"} {
 			if err := db.Exec("DROP TABLE IF EXISTS " + table).Error; err != nil {
 				return nil, fmt.Errorf("replace single-product order schema: %w", err)

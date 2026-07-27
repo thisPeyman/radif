@@ -25,6 +25,7 @@ The primary success condition is that a repeat order can be created and its link
 - Admin login and session management
 - Switching between an admin's shops
 - Fast multi-item order creation with quantities and an editable total amount
+- Required estimated delivery date, editable by the admin and visible to the customer
 - Optional Instagram username and internal note
 - Unique secret customer link for every order
 - One-action order creation and link copying
@@ -186,6 +187,7 @@ One owner column is sufficient because multi-admin collaboration is outside the 
 - Secret customer token
 - Shop ID
 - Amount in toman
+- Estimated delivery date
 - Instagram username
 - Internal note
 - Customer full name
@@ -276,7 +278,7 @@ Keep the API small and same-origin.
 | `POST` | `/api/o/:token/details` | Submit customer details and optional receipt |
 | `POST` | `/api/o/:token/receipt` | Upload a receipt after form submission |
 
-Admin order responses may include private operational data. Customer responses must include only shop identity, product summary, amount, public status, latest update, receipt state, and tracking code.
+Admin order responses may include private operational data. Customer responses must include only shop identity, product summary, amount, estimated delivery date, public status, latest update, receipt state, and tracking code.
 
 ## 8. UX Direction
 
@@ -342,6 +344,7 @@ Requirements:
 - Remember the current shop.
 - Present products as compact, image-backed multi-select choices with quantity controls.
 - Prefill the total from selected products and quantities, and allow editing.
+- Require an estimated delivery date and show its Persian-calendar preview.
 - Keep Instagram username and internal note collapsed or visually secondary.
 - Create the order and attempt clipboard copy from one primary action.
 - If clipboard access fails, show the link and an obvious retry button.
@@ -377,6 +380,7 @@ Requirements:
 - Keep operational actions near the top.
 - Change status in no more than two interactions.
 - Show copy actions for mobile number, address, customer link, and tracking code.
+- Let the admin update the estimated delivery date.
 - Protect receipt preview behind admin authentication and shop ownership.
 - Let the admin correct customer information.
 - Show the simple status history beneath current information.
@@ -386,6 +390,7 @@ Requirements:
 
 - Reuse the same secret link after submission.
 - Show order code, shop, product, amount, current status, and latest update.
+- Show the current estimated delivery date.
 - Present a simple vertical timeline derived from status history.
 - Offer later receipt upload while it is allowed.
 - Show and copy the tracking code when available.

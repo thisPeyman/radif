@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -44,6 +45,10 @@ func TestProductsRequireOwnedShop(t *testing.T) {
 	if response.Code != http.StatusNotFound {
 		t.Fatalf("cross-shop products returned %d", response.Code)
 	}
+	response = request(e, http.MethodGet, fmt.Sprintf("/api/orders?shopId=%d", otherShop.ID), "", "", cookie)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("cross-shop order list returned %d", response.Code)
+	}
 }
 
 func TestCreateOrderAndRecordCopy(t *testing.T) {
@@ -53,7 +58,8 @@ func TestCreateOrderAndRecordCopy(t *testing.T) {
 	if err := db.Order("id").Limit(2).Find(&products).Error; err != nil || len(products) != 2 {
 		t.Fatal(err)
 	}
-	body := fmt.Sprintf(`{"createKey":"create-test-1","shopId":%d,"items":[{"productId":%d,"quantity":2},{"productId":%d,"quantity":1}],"amount":1520000,"instagramUsername":" @customer ","internalNote":" test ","elapsedMs":1234}`, products[0].ShopID, products[0].ID, products[1].ID)
+	deliveryDate := time.Now().AddDate(0, 0, 7).Format("2006-01-02")
+	body := fmt.Sprintf(`{"createKey":"create-test-1","shopId":%d,"items":[{"productId":%d,"quantity":2},{"productId":%d,"quantity":1}],"amount":1520000,"estimatedDeliveryDate":%q,"instagramUsername":" @customer ","internalNote":" test ","elapsedMs":1234}`, products[0].ShopID, products[0].ID, products[1].ID, deliveryDate)
 	response := request(e, http.MethodPost, "/api/orders", body, testOrigin, cookie)
 	if response.Code != http.StatusCreated {
 		t.Fatalf("create returned %d: %s", response.Code, response.Body.String())
@@ -79,7 +85,7 @@ func TestCreateOrderAndRecordCopy(t *testing.T) {
 	if err := db.First(&order, output.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if order.Status != waitingInfoStatus || order.InstagramUsername != "customer" || order.InternalNote != "test" || order.Amount != 1520000 {
+	if order.Status != waitingInfoStatus || order.EstimatedDeliveryDate != deliveryDate || order.InstagramUsername != "customer" || order.InternalNote != "test" || order.Amount != 1520000 {
 		t.Fatalf("unexpected order: %#v", order)
 	}
 	var items []OrderItem
@@ -97,6 +103,13 @@ func TestCreateOrderAndRecordCopy(t *testing.T) {
 	if err := db.Model(&PilotEvent{}).Where("order_id = ?", order.ID).Count(&eventCount).Error; err != nil || eventCount != 2 {
 		t.Fatalf("creation event count = %d, error %v", eventCount, err)
 	}
+	publicResponse := request(e, http.MethodGet, "/api"+parsedURL.Path, "", "", nil)
+	if publicResponse.Code != http.StatusOK || !strings.Contains(publicResponse.Body.String(), deliveryDate) || !strings.Contains(publicResponse.Body.String(), products[0].Name) {
+		t.Fatalf("public order returned %d: %s", publicResponse.Code, publicResponse.Body.String())
+	}
+	if body := publicResponse.Body.String(); strings.Contains(body, "internalNote") || strings.Contains(body, "customerMobile") || strings.Contains(body, "test") {
+		t.Fatalf("public order exposed private data: %s", body)
+	}
 	retry := request(e, http.MethodPost, "/api/orders", body, testOrigin, cookie)
 	if retry.Code != http.StatusCreated {
 		t.Fatalf("idempotent retry returned %d: %s", retry.Code, retry.Body.String())
@@ -108,6 +121,27 @@ func TestCreateOrderAndRecordCopy(t *testing.T) {
 	mismatch := request(e, http.MethodPost, "/api/orders", strings.Replace(body, "1520000", "1530000", 1), testOrigin, cookie)
 	if mismatch.Code != http.StatusConflict {
 		t.Fatalf("idempotency mismatch returned %d: %s", mismatch.Code, mismatch.Body.String())
+	}
+	updatedDate := time.Now().AddDate(0, 0, 8).Format("2006-01-02")
+	response = request(e, http.MethodPatch, fmt.Sprintf("/api/orders/%d", order.ID), fmt.Sprintf(`{"estimatedDeliveryDate":%q}`, updatedDate), testOrigin, cookie)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), updatedDate) {
+		t.Fatalf("delivery update returned %d: %s", response.Code, response.Body.String())
+	}
+	publicResponse = request(e, http.MethodGet, "/api"+parsedURL.Path, "", "", nil)
+	if publicResponse.Code != http.StatusOK || !strings.Contains(publicResponse.Body.String(), updatedDate) {
+		t.Fatalf("public order did not show updated delivery date: %s", publicResponse.Body.String())
+	}
+	retry = request(e, http.MethodPost, "/api/orders", body, testOrigin, cookie)
+	if retry.Code != http.StatusCreated || !strings.Contains(retry.Body.String(), updatedDate) {
+		t.Fatalf("idempotent retry after date update returned %d: %s", retry.Code, retry.Body.String())
+	}
+	detailResponse := request(e, http.MethodGet, fmt.Sprintf("/api/orders/%d", order.ID), "", "", cookie)
+	if detailResponse.Code != http.StatusOK || !strings.Contains(detailResponse.Body.String(), updatedDate) {
+		t.Fatalf("order detail returned %d: %s", detailResponse.Code, detailResponse.Body.String())
+	}
+	listResponse := request(e, http.MethodGet, fmt.Sprintf("/api/orders?shopId=%d", order.ShopID), "", "", cookie)
+	if listResponse.Code != http.StatusOK || !strings.Contains(listResponse.Body.String(), updatedDate) || !strings.Contains(listResponse.Body.String(), products[0].Name) {
+		t.Fatalf("order list returned %d: %s", listResponse.Code, listResponse.Body.String())
 	}
 
 	response = request(e, http.MethodPost, fmt.Sprintf("/api/orders/%d/link-copied", order.ID), "", testOrigin, cookie)
@@ -133,6 +167,7 @@ func TestCreateOrderValidationAndOwnership(t *testing.T) {
 		"duplicate item": fmt.Sprintf(`{"createKey":"duplicate","shopId":%d,"items":[{"productId":%d,"quantity":1},{"productId":%d,"quantity":2}],"amount":1}`, product.ShopID, product.ID, product.ID),
 		"unknown field":  fmt.Sprintf(`{"createKey":"unknown-field","shopId":%d,"items":[{"productId":%d,"quantity":1}],"amount":1,"extra":true}`, product.ShopID, product.ID),
 		"trailing JSON":  fmt.Sprintf(`{"createKey":"trailing","shopId":%d,"items":[{"productId":%d,"quantity":1}],"amount":1}{}`, product.ShopID, product.ID),
+		"past delivery":  fmt.Sprintf(`{"createKey":"past-date","shopId":%d,"items":[{"productId":%d,"quantity":1}],"amount":1,"estimatedDeliveryDate":"2020-01-01"}`, product.ShopID, product.ID),
 	} {
 		t.Run(name, func(t *testing.T) {
 			response := request(e, http.MethodPost, "/api/orders", body, testOrigin, cookie)
@@ -176,11 +211,19 @@ func TestCopyEventRequiresOwnership(t *testing.T) {
 	if response.Code != http.StatusNotFound {
 		t.Fatalf("cross-shop copy event returned %d", response.Code)
 	}
+	response = request(e, http.MethodPatch, fmt.Sprintf("/api/orders/%d", order.ID), fmt.Sprintf(`{"estimatedDeliveryDate":%q}`, time.Now().AddDate(0, 0, 7).Format("2006-01-02")), testOrigin, cookie)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("cross-shop delivery update returned %d", response.Code)
+	}
+	response = request(e, http.MethodGet, fmt.Sprintf("/api/orders/%d", order.ID), "", "", cookie)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("cross-shop order detail returned %d", response.Code)
+	}
 	var ownProduct Product
 	if err := db.Order("id").First(&ownProduct).Error; err != nil {
 		t.Fatal(err)
 	}
-	body := fmt.Sprintf(`{"createKey":"other-create","shopId":%d,"items":[{"productId":%d,"quantity":1}],"amount":1}`, ownProduct.ShopID, ownProduct.ID)
+	body := fmt.Sprintf(`{"createKey":"other-create","shopId":%d,"items":[{"productId":%d,"quantity":1}],"amount":1,"estimatedDeliveryDate":%q}`, ownProduct.ShopID, ownProduct.ID, time.Now().AddDate(0, 0, 7).Format("2006-01-02"))
 	response = request(e, http.MethodPost, "/api/orders", body, testOrigin, cookie)
 	if response.Code != http.StatusConflict {
 		t.Fatalf("cross-admin idempotency collision returned %d: %s", response.Code, response.Body.String())

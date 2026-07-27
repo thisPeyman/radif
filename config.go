@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -13,6 +14,8 @@ type config struct {
 	appOrigin       string
 	sessionLifetime time.Duration
 	secureCookies   bool
+	receiptDir      string
+	maxReceiptBytes int64
 }
 
 func loadConfig() (config, error) {
@@ -41,9 +44,19 @@ func loadConfig() (config, error) {
 		}
 	}
 
+	maxReceiptBytes := int64(5 << 20)
+	if value := os.Getenv("MAX_RECEIPT_BYTES"); value != "" {
+		maxReceiptBytes, err = strconv.ParseInt(value, 10, 64)
+		if err != nil || maxReceiptBytes <= 0 {
+			return config{}, fmt.Errorf("MAX_RECEIPT_BYTES must be a positive integer")
+		}
+	}
+
 	return config{
 		appOrigin:       origin,
 		sessionLifetime: lifetime,
 		secureCookies:   secureCookies,
+		receiptDir:      filepath.Join(filepath.Dir(databasePath()), "receipts"),
+		maxReceiptBytes: maxReceiptBytes,
 	}, nil
 }

@@ -21,7 +21,8 @@ func newAuthTestServer(t *testing.T) (*gorm.DB, *echo.Echo, config, Admin) {
 	t.Setenv("SEED_ADMIN_PASSWORD", "test-password")
 	t.Setenv("SEED_ADMIN_NAME", "مدیر آزمایشی")
 
-	db, err := openDatabase(filepath.Join(t.TempDir(), "app.db"))
+	testDir := t.TempDir()
+	db, err := openDatabase(filepath.Join(testDir, "app.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +39,7 @@ func newAuthTestServer(t *testing.T) (*gorm.DB, *echo.Echo, config, Admin) {
 	if err := db.First(&admin, "login = ?", "admin").Error; err != nil {
 		t.Fatal(err)
 	}
-	cfg := config{appOrigin: testOrigin, sessionLifetime: time.Hour, secureCookies: true}
+	cfg := config{appOrigin: testOrigin, sessionLifetime: time.Hour, secureCookies: true, receiptDir: filepath.Join(testDir, "receipts"), maxReceiptBytes: 1 << 20}
 	return db, newServer(db, cfg), cfg, admin
 }
 
