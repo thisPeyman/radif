@@ -87,7 +87,7 @@ func TestSubmitCustomerDetailsWithReceipt(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("submission returned %d: %s", response.Code, response.Body.String())
 	}
-	if body := response.Body.String(); !strings.Contains(body, `"customerSubmitted":true`) || !strings.Contains(body, `"receiptUploaded":true`) || strings.Contains(body, "سارا") || strings.Contains(body, "customerMobile") {
+	if body := response.Body.String(); !strings.Contains(body, `"customerSubmitted":true`) || !strings.Contains(body, `"receiptUploaded":true`) || !strings.Contains(body, `"mobile":"0912•••6789"`) || strings.Contains(body, "تهران، خیابان آزمایش") || strings.Contains(body, "customerMobile") {
 		t.Fatalf("unexpected public response: %s", body)
 	}
 	if err := db.First(&order, order.ID).Error; err != nil {

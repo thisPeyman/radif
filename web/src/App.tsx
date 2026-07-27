@@ -77,6 +77,8 @@ type PublicOrder = {
   receiptUploadAllowed: boolean;
   shipmentTrackingCode?: string;
   updatedAt: string;
+  history: { status: string; createdAt: string }[];
+  customerSummary?: { fullName: string; mobile: string; addressPreview: string; postalCodeSuffix: string };
 };
 
 type OrderSummary = {
@@ -752,6 +754,7 @@ function PublicOrderPage() {
           <section className="mt-7 border-r-4 border-teal bg-white px-5 py-4 shadow-sm">
             <p className="text-xs font-bold text-ink/70">وضعیت سفارش</p>
             <p className="mt-1 text-lg font-black text-teal">{publicStatusLabels[order.status] ?? order.status}</p>
+            {order.customerSubmitted && <p className="mt-2 text-xs text-ink/60">آخرین به‌روزرسانی: {persianDateTime(order.updatedAt)}</p>}
           </section>
 
           <section className="mt-4 rounded-3xl border border-saffron/45 bg-saffron/10 p-5">
@@ -849,6 +852,37 @@ function PublicOrderPage() {
                 <div><h2 className="font-black">اطلاعات تحویل ثبت شد</h2><p className="mt-1 text-sm text-ink/70">فروشگاه سفارش شما را بررسی می‌کند.</p></div>
               </div>
               <p className="mt-4 border-t border-teal/15 pt-4 text-sm font-bold">{order.receiptUploaded ? "رسید پرداخت بارگذاری شده است." : "هنوز رسیدی بارگذاری نشده است."}</p>
+              {order.customerSummary && (
+                <dl className="mt-4 grid gap-3 border-t border-teal/15 pt-4 text-sm">
+                  <div><dt className="text-xs font-bold text-ink/60">گیرنده</dt><dd className="mt-1 font-bold">{order.customerSummary.fullName}</dd></div>
+                  <div><dt className="text-xs font-bold text-ink/60">شماره ثبت‌شده</dt><dd className="mt-1 font-bold" dir="ltr">{order.customerSummary.mobile}</dd></div>
+                  <div><dt className="text-xs font-bold text-ink/60">نشانی ثبت‌شده</dt><dd className="mt-1 font-bold">{order.customerSummary.addressPreview}</dd></div>
+                  {order.customerSummary.postalCodeSuffix && <div><dt className="text-xs font-bold text-ink/60">پایان کد پستی</dt><dd className="mt-1 font-bold" dir="ltr">••••••{order.customerSummary.postalCodeSuffix}</dd></div>}
+                </dl>
+              )}
+            </section>
+          )}
+
+          {order.customerSubmitted && order.history.length > 0 && (
+            <section className="mt-5 rounded-3xl border border-ledger bg-white p-5">
+              <h2 className="font-black">روند سفارش</h2>
+              <ol className="mt-4 border-r-2 border-ledger pr-5">
+                {order.history.map((entry, index) => (
+                  <li className="relative pb-5 last:pb-0" key={`${entry.createdAt}-${index}`}>
+                    <span className="absolute -right-[1.7rem] top-1 size-3 rounded-full bg-teal" />
+                    <p className="font-bold">{publicStatusLabels[entry.status] ?? entry.status}</p>
+                    <p className="mt-1 text-xs text-ink/60">{persianDateTime(entry.createdAt)}</p>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          )}
+
+          {order.customerSubmitted && order.shipmentTrackingCode && (
+            <section className="mt-5 rounded-3xl border border-saffron/45 bg-saffron/10 p-5">
+              <p className="text-xs font-bold text-ink/70">کد رهگیری مرسوله</p>
+              <p className="mt-2 break-all text-left text-lg font-black" dir="ltr">{order.shipmentTrackingCode}</p>
+              <CopyButton value={order.shipmentTrackingCode} label="کپی کد رهگیری" />
             </section>
           )}
 

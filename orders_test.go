@@ -302,6 +302,25 @@ func TestOrderOperations(t *testing.T) {
 	if public.Code != http.StatusOK || !strings.Contains(public.Body.String(), `"shipmentTrackingCode":"TRACK-123"`) || strings.Contains(public.Body.String(), `"receiptUploadAllowed":true`) {
 		t.Fatalf("public operation state returned %d: %s", public.Code, public.Body.String())
 	}
+	var publicStatus struct {
+		History []struct {
+			Status string `json:"status"`
+		} `json:"history"`
+		CustomerSummary struct {
+			Mobile           string `json:"mobile"`
+			AddressPreview   string `json:"addressPreview"`
+			PostalCodeSuffix string `json:"postalCodeSuffix"`
+		} `json:"customerSummary"`
+	}
+	if err := json.Unmarshal(public.Body.Bytes(), &publicStatus); err != nil {
+		t.Fatal(err)
+	}
+	if len(publicStatus.History) != 3 || publicStatus.History[2].Status != "paid" || publicStatus.CustomerSummary.Mobile != "0912•••6789" || publicStatus.CustomerSummary.PostalCodeSuffix != "7890" || publicStatus.CustomerSummary.AddressPreview == "نشانی اصلاح‌شده" {
+		t.Fatalf("unexpected public status summary: %#v", publicStatus)
+	}
+	if body := public.Body.String(); strings.Contains(body, `"customerAddress"`) || strings.Contains(body, `"internalNote"`) || strings.Contains(body, `"instagramUsername"`) || strings.Contains(body, `"changedByAdmin`) || strings.Contains(body, admin.Name) || strings.Contains(body, "نشانی اصلاح‌شده") {
+		t.Fatalf("public status exposed private data: %s", body)
+	}
 }
 
 func TestProtectedOrderReceipt(t *testing.T) {

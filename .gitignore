@@ -4,3 +4,4 @@
 *.tsbuildinfo
 *.db
 *.db-*
+data/receipts/*

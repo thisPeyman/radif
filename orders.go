@@ -551,7 +551,7 @@ func findPublicOrder(db *gorm.DB, rawToken string) (Order, error) {
 		return Order{}, echo.NewHTTPError(http.StatusNotFound, "سفارش پیدا نشد.")
 	}
 	var order Order
-	err := db.Preload("Shop").Preload("Items.Product").First(&order, "secret_token = ?", token).Error
+	err := db.Preload("Shop").Preload("Items.Product").Preload("History", func(query *gorm.DB) *gorm.DB { return query.Order("created_at, id") }).First(&order, "secret_token = ?", token).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return Order{}, echo.NewHTTPError(http.StatusNotFound, "سفارش پیدا نشد.")
 	}
@@ -568,9 +568,17 @@ func publicOrderResponse(c echo.Context, status int, order Order) error {
 	for i, item := range order.Items {
 		items[i] = publicItem{item.Product.Name, item.Product.MainImagePath, item.Quantity}
 	}
+	type publicHistory struct {
+		Status    string    `json:"status"`
+		CreatedAt time.Time `json:"createdAt"`
+	}
+	history := make([]publicHistory, len(order.History))
+	for i, entry := range order.History {
+		history[i] = publicHistory{entry.NewStatus, entry.CreatedAt}
+	}
 	submitted := order.CustomerSubmittedAt != nil
 	receiptUploaded := order.ReceiptFilePath != ""
-	return c.JSON(status, map[string]any{
+	response := map[string]any{
 		"orderCode":                 fmt.Sprintf("#%d", order.ID),
 		"shop":                      map[string]any{"name": order.Shop.Name, "logoPath": order.Shop.LogoPath},
 		"items":                     items,
@@ -584,7 +592,31 @@ func publicOrderResponse(c echo.Context, status int, order Order) error {
 		"receiptUploadAllowed":      submitted && !receiptUploaded && order.Status != "paid" && order.Status != "cancelled",
 		"shipmentTrackingCode":      order.ShipmentTrackingCode,
 		"updatedAt":                 order.UpdatedAt,
-	})
+		"history":                   history,
+	}
+	if submitted {
+		mobile := order.CustomerMobile
+		if len(mobile) > 8 {
+			mobile = mobile[:4] + "•••" + mobile[len(mobile)-4:]
+		}
+		address := []rune(order.CustomerAddress)
+		visibleAddress := len(address) - 4
+		if visibleAddress > 24 {
+			visibleAddress = 24
+		}
+		if visibleAddress < 0 {
+			visibleAddress = 0
+		}
+		postalCode := order.CustomerPostalCode
+		if len(postalCode) > 4 {
+			postalCode = postalCode[len(postalCode)-4:]
+		}
+		response["customerSummary"] = map[string]string{
+			"fullName": order.CustomerFullName, "mobile": mobile,
+			"addressPreview": string(address[:visibleAddress]) + "…", "postalCodeSuffix": postalCode,
+		}
+	}
+	return c.JSON(status, response)
 }
 
 func recordLinkCopied(db *gorm.DB) echo.HandlerFunc {
