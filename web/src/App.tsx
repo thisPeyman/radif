@@ -71,6 +71,7 @@ type PublicOrder = {
   amount: number;
   status: string;
   estimatedDeliveryDate: string;
+  paymentCardNumber: string;
   paymentInstructions: string;
   customerSubmitted: boolean;
   customerSubmissionAllowed: boolean;
@@ -214,6 +215,15 @@ function relativeAge(value: string) {
   const hours = Math.round(minutes / 60);
   if (Math.abs(hours) < 24) return relativeTimeFormat.format(hours, "hour");
   return relativeTimeFormat.format(Math.round(hours / 24), "day");
+}
+
+function deliveryTiming(value: string) {
+  const day = 86400000;
+  const days = Math.round((new Date(`${value}T12:00:00Z`).getTime() - new Date(`${todayISO()}T12:00:00Z`).getTime()) / day);
+  if (days < 0) return { days, label: `${persianNumber(-days)} روز عقب‌افتاده` };
+  if (days === 0) return { days, label: "امروز" };
+  if (days === 1) return { days, label: "فردا" };
+  return { days, label: `${persianNumber(days)} روز دیگر` };
 }
 
 function dateFromISO(value: string) {
@@ -487,7 +497,7 @@ function BottomNavigation({ disabled }: { disabled: boolean }) {
           className={({ isActive }) => `nav-item ${isActive ? "nav-item-active" : ""} ${disabled ? "pointer-events-none opacity-45" : ""}`}
           aria-disabled={disabled}
           onClick={(event) => { if (disabled) event.preventDefault(); }}
-          end={to !== "/orders"}
+          end
         >
           <Icon className="size-5" strokeWidth={2} aria-hidden="true" />
           <span>{label}</span>
@@ -505,9 +515,11 @@ function OrdersPage({ shop }: { shop: Shop }) {
   const [params, setParams] = useSearchParams();
   const search = params.get("q") ?? "";
   const status = params.get("status") ?? "";
+  const delivery = params.get("delivery") ?? "";
+  const sort = params.get("sort") ?? "due";
   const deferredSearch = useDeferredValue(search);
 
-  function setFilter(name: "q" | "status", value: string) {
+  function setFilter(name: "q" | "status" | "delivery" | "sort", value: string) {
     const next = new URLSearchParams(params);
     if (value) next.set(name, value); else next.delete(name);
     setParams(next, { replace: true });
@@ -520,6 +532,8 @@ function OrdersPage({ shop }: { shop: Shop }) {
     const query = new URLSearchParams({ shopId: String(shop.id) });
     if (deferredSearch) query.set("q", deferredSearch);
     if (status) query.set("status", status);
+    if (delivery) query.set("delivery", delivery);
+    if (sort !== "due") query.set("sort", sort);
     api<{ orders: OrderSummary[] }>(`/api/orders?${query}`, { signal: controller.signal })
       .then((response) => setOrders(response.orders))
       .catch((reason) => {
@@ -528,7 +542,7 @@ function OrdersPage({ shop }: { shop: Shop }) {
       })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [deferredSearch, shop.id, status, reload]);
+  }, [deferredSearch, delivery, shop.id, sort, status, reload]);
 
   return (
     <section className="page-content">
@@ -538,6 +552,17 @@ function OrdersPage({ shop }: { shop: Shop }) {
         <Search className="pointer-events-none absolute right-4 top-4 size-5 text-ink/55" aria-hidden="true" />
         <input className="field pr-12" type="search" value={search} onChange={(event) => setFilter("q", event.target.value)} placeholder="نام، موبایل، کد سفارش یا اینستاگرام" aria-label="جستجوی سفارش" />
       </label>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <button className={`flex min-h-12 items-center justify-center gap-2 rounded-xl border px-3 text-sm font-bold ${delivery === "soon" ? "border-teal bg-teal text-white" : "border-ledger bg-white text-ink"}`} type="button" aria-pressed={delivery === "soon"} onClick={() => setFilter("delivery", delivery === "soon" ? "" : "soon")}>
+          <CalendarDays className="size-5 shrink-0" aria-hidden="true" />
+          تحویل تا ۷ روز آینده
+        </button>
+        <select className="field min-h-12 px-3 text-sm font-bold" value={sort} onChange={(event) => setFilter("sort", event.target.value === "due" ? "" : event.target.value)} aria-label="ترتیب سفارش‌ها">
+          <option value="due">نزدیک‌ترین تحویل</option>
+          <option value="recent">جدیدترین</option>
+          <option value="amount">بیشترین مبلغ</option>
+        </select>
+      </div>
       <div className="-mx-5 mt-3 flex gap-2 overflow-x-auto px-5 pb-2" aria-label="فیلتر وضعیت">
         {["", ...Object.keys(adminStatusLabels)].map((value) => (
           <button className={`min-h-11 shrink-0 rounded-full border px-4 text-sm font-bold ${status === value ? "border-ink bg-ink text-white" : "border-ledger bg-white text-ink"}`} key={value || "all"} type="button" onClick={() => setFilter("status", value)}>
@@ -549,8 +574,9 @@ function OrdersPage({ shop }: { shop: Shop }) {
       {!loading && error && <div className="mt-5"><ErrorNotice retry={() => setReload((value) => value + 1)}>{error}</ErrorNotice></div>}
       {!loading && !error && orders.length > 0 && (
         <div className="mt-4 space-y-3">
-          {orders.map((order) => (
-            <NavLink className={`block rounded-2xl border-r-4 bg-white p-4 text-ink no-underline shadow-sm ${statusStyles[order.status]?.rail ?? "border-ink"}`} key={order.id} to={`/orders/${order.id}${params.toString() ? `?${params}` : ""}`}>
+          {orders.map((order) => {
+            const timing = deliveryTiming(order.estimatedDeliveryDate);
+            return <NavLink className={`block rounded-2xl border-r-4 bg-white p-4 text-ink no-underline shadow-sm ${statusStyles[order.status]?.rail ?? "border-ink"}`} key={order.id} to={`/orders/${order.id}${params.toString() ? `?${params}` : ""}`}>
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-xs font-bold text-ink/70">{order.orderCode.replace(/\d/g, (digit) => persianDigits[Number(digit)])} · {relativeAge(order.createdAt)}</p>
@@ -560,19 +586,19 @@ function OrdersPage({ shop }: { shop: Shop }) {
                 <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${statusStyles[order.status]?.chip ?? "bg-ledger"}`}>{adminStatusLabels[order.status] ?? order.status}</span>
               </div>
               <div className="mt-4 flex items-end justify-between gap-3 border-t border-ledger pt-3 text-sm">
-                <span><span className="block text-xs text-ink/70">تحویل</span><strong>{persianDate(order.estimatedDeliveryDate)}</strong></span>
+                <span><span className="block text-xs text-ink/70">تحویل</span><strong>{persianDate(order.estimatedDeliveryDate)}</strong>{!(["shipped", "cancelled"].includes(order.status)) && <span className={`mt-1 block w-fit rounded-full px-2 py-0.5 text-xs font-bold ${timing.days < 0 ? "bg-error/10 text-error" : timing.days <= 7 ? "bg-saffron/15 text-ink" : "bg-ledger text-ink/70"}`}>{timing.label}</span>}</span>
                 <span className="text-left"><strong>{persianNumber(order.amount)} تومان</strong><span className="mt-1 flex justify-end gap-2 text-xs text-ink/65">{order.receiptUploaded && <span>رسید دارد</span>}{order.hasTrackingCode && <span>کد رهگیری دارد</span>}</span></span>
               </div>
-            </NavLink>
-          ))}
+            </NavLink>;
+          })}
         </div>
       )}
       {!loading && !error && orders.length === 0 && (
         <div className="flex min-h-72 flex-col justify-center text-center">
           <ClipboardList className="mx-auto size-10 text-teal" aria-hidden="true" />
-          <h2 className="mt-4 text-xl font-black">{search || status ? "سفارشی با این فیلتر پیدا نشد" : "هنوز سفارشی ساخته نشده"}</h2>
-          <p className="mt-2 text-sm text-ink/70">{search || status ? "عبارت جستجو یا وضعیت را تغییر دهید." : "از سفارش جدید شروع کنید."}</p>
-          {!search && !status && <NavLink className="primary-button mx-auto mt-6" to="/orders/new"><Plus className="size-5" />ساخت سفارش جدید</NavLink>}
+          <h2 className="mt-4 text-xl font-black">{search || status || delivery ? "سفارشی با این فیلتر پیدا نشد" : "هنوز سفارشی ساخته نشده"}</h2>
+          <p className="mt-2 text-sm text-ink/70">{search || status || delivery ? "عبارت جستجو یا فیلترها را تغییر دهید." : "از سفارش جدید شروع کنید."}</p>
+          {search || status || delivery ? <button className="secondary-button mx-auto mt-6" type="button" onClick={() => setParams(sort === "due" ? {} : { sort })}>نمایش همه سفارش‌ها</button> : <NavLink className="primary-button mx-auto mt-6" to="/orders/new"><Plus className="size-5" />ساخت سفارش جدید</NavLink>}
         </div>
       )}
     </section>
@@ -630,7 +656,7 @@ function ProductImage({ product }: { product: Product }) {
 
 const publicStatusLabels: Record<string, string> = {
   waiting_info: "در انتظار اطلاعات شما",
-  waiting_payment: "در انتظار پرداخت",
+  waiting_payment: "در انتظار تأیید پرداخت",
   paid: "پرداخت شده",
   preparing: "در حال آماده‌سازی",
   shipped: "ارسال شده",
@@ -696,10 +722,10 @@ function PublicOrderPage() {
     setFieldErrors((current) => ({ ...current, [field]: undefined }));
   }
 
-  async function copyPaymentInstructions() {
+  async function copyPaymentCardNumber() {
     if (!order) return;
     try {
-      await navigator.clipboard.writeText(order.paymentInstructions);
+      await navigator.clipboard.writeText(order.paymentCardNumber);
       setCopyState("copied");
     } catch {
       setCopyState("failed");
@@ -762,6 +788,7 @@ function PublicOrderPage() {
           <section className="mt-7 border-r-4 border-teal bg-white px-5 py-4 shadow-sm">
             <p className="text-xs font-bold text-ink/70">وضعیت سفارش</p>
             <p className="mt-1 text-lg font-black text-teal">{publicStatusLabels[order.status] ?? order.status}</p>
+            {order.status === "waiting_payment" && <p className="mt-2 text-sm text-ink/70">فروشگاه در حال بررسی رسید پرداخت شماست.</p>}
             {order.customerSubmitted && <p className="mt-2 text-xs text-ink/60">آخرین به‌روزرسانی: {persianDateTime(order.updatedAt)}</p>}
           </section>
 
@@ -795,12 +822,19 @@ function PublicOrderPage() {
 
           <section className="mt-6 rounded-3xl border border-ledger bg-white p-5">
             <h2 className="text-sm font-black">اطلاعات پرداخت فروشگاه</h2>
-            <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-ink/80">{order.paymentInstructions}</p>
-            <button className="secondary-button mt-4 w-full" type="button" onClick={copyPaymentInstructions}>
-              {copyState === "copied" ? <ClipboardCheck className="size-5" aria-hidden="true" /> : <Clipboard className="size-5" aria-hidden="true" />}
-              {copyState === "copied" ? "کپی شد" : "کپی اطلاعات پرداخت"}
+            <p className="mt-2 text-sm leading-7 text-ink/70">مبلغ سفارش را به شماره کارت زیر واریز کنید.</p>
+            <button className="mt-3 flex min-h-16 w-full items-center justify-between gap-3 rounded-2xl border-2 border-saffron/60 bg-saffron/10 px-4 py-3 text-ink" type="button" onClick={copyPaymentCardNumber}>
+              <span className="text-right">
+                <span className="block text-xs font-bold text-ink/60">شماره کارت</span>
+                <strong className="mt-1 block select-all text-lg tracking-wider" dir="ltr">{order.paymentCardNumber.match(/.{1,4}/g)?.join(" ")}</strong>
+              </span>
+              <span className="flex shrink-0 items-center gap-2 text-sm font-black text-teal">
+                {copyState === "copied" ? <ClipboardCheck className="size-5" aria-hidden="true" /> : <Clipboard className="size-5" aria-hidden="true" />}
+                {copyState === "copied" ? "کپی شد" : "کپی"}
+              </span>
             </button>
-            {copyState === "failed" && <p className="mt-2 text-sm text-error" role="alert">کپی خودکار ممکن نشد؛ متن بالا را انتخاب و کپی کنید.</p>}
+            <p className="mt-3 whitespace-pre-wrap text-sm font-bold leading-7 text-ink/80">{order.paymentInstructions}</p>
+            {copyState === "failed" && <p className="mt-2 text-sm text-error" role="alert">کپی خودکار ممکن نشد؛ شماره کارت بالا را نگه دارید و انتخاب کنید.</p>}
           </section>
 
           {order.customerSubmissionAllowed && (

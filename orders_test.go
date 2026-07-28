@@ -40,7 +40,7 @@ func TestProductsRequireOwnedShop(t *testing.T) {
 	if err := db.Create(&otherAdmin).Error; err != nil {
 		t.Fatal(err)
 	}
-	otherShop := Shop{OwnerAdminID: otherAdmin.ID, Name: "فروشگاه محصولات دیگر", PaymentInstructions: "آزمایشی", Active: true}
+	otherShop := Shop{OwnerAdminID: otherAdmin.ID, Name: "فروشگاه محصولات دیگر", PaymentCardNumber: "6037991812345678", PaymentInstructions: "آزمایشی", Active: true}
 	if err := db.Create(&otherShop).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +107,7 @@ func TestCreateOrderAndRecordCopy(t *testing.T) {
 		t.Fatalf("creation event count = %d, error %v", eventCount, err)
 	}
 	publicResponse := request(e, http.MethodGet, "/api"+parsedURL.Path, "", "", nil)
-	if publicResponse.Code != http.StatusOK || !strings.Contains(publicResponse.Body.String(), deliveryDate) || !strings.Contains(publicResponse.Body.String(), products[0].Name) {
+	if publicResponse.Code != http.StatusOK || !strings.Contains(publicResponse.Body.String(), deliveryDate) || !strings.Contains(publicResponse.Body.String(), products[0].Name) || !strings.Contains(publicResponse.Body.String(), `"paymentCardNumber":"6037991812345678"`) {
 		t.Fatalf("public order returned %d: %s", publicResponse.Code, publicResponse.Body.String())
 	}
 	if body := publicResponse.Body.String(); strings.Contains(body, "internalNote") || strings.Contains(body, "customerMobile") || strings.Contains(body, "test") {
@@ -191,7 +191,7 @@ func createOtherOrder(t *testing.T, db *gorm.DB) Order {
 	if err := db.Create(&admin).Error; err != nil {
 		t.Fatal(err)
 	}
-	shop := Shop{OwnerAdminID: admin.ID, Name: "فروشگاه سفارش دیگر", PaymentInstructions: "آزمایشی", Active: true}
+	shop := Shop{OwnerAdminID: admin.ID, Name: "فروشگاه سفارش دیگر", PaymentCardNumber: "6037991812345678", PaymentInstructions: "آزمایشی", Active: true}
 	if err := db.Create(&shop).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -320,6 +320,107 @@ func TestOrderOperations(t *testing.T) {
 	}
 	if body := public.Body.String(); strings.Contains(body, `"customerAddress"`) || strings.Contains(body, `"internalNote"`) || strings.Contains(body, `"instagramUsername"`) || strings.Contains(body, `"changedByAdmin`) || strings.Contains(body, admin.Name) || strings.Contains(body, "نشانی اصلاح‌شده") {
 		t.Fatalf("public status exposed private data: %s", body)
+	}
+}
+
+func TestOrderListDeliveryFilterAndSorting(t *testing.T) {
+	db, e, _, _ := newAuthTestServer(t)
+	cookie := loginCookie(t, e)
+	var shop Shop
+	if err := db.First(&shop).Error; err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	today := now.In(iranTime)
+	orders := []Order{
+		{CreateKey: "sort-overdue", CreateFingerprint: "sort-overdue", SecretToken: "sort-overdue", ShopID: shop.ID, Amount: 100, EstimatedDeliveryDate: today.AddDate(0, 0, -1).Format("2006-01-02"), Status: "preparing", CreatedAt: now.Add(-4 * time.Hour)},
+		{CreateKey: "sort-soon", CreateFingerprint: "sort-soon", SecretToken: "sort-soon", ShopID: shop.ID, Amount: 500, EstimatedDeliveryDate: today.AddDate(0, 0, 2).Format("2006-01-02"), Status: "paid", CreatedAt: now.Add(-3 * time.Hour)},
+		{CreateKey: "sort-later", CreateFingerprint: "sort-later", SecretToken: "sort-later", ShopID: shop.ID, Amount: 900, EstimatedDeliveryDate: today.AddDate(0, 0, 8).Format("2006-01-02"), Status: waitingInfoStatus, CreatedAt: now.Add(-2 * time.Hour)},
+		{CreateKey: "sort-shipped", CreateFingerprint: "sort-shipped", SecretToken: "sort-shipped", ShopID: shop.ID, Amount: 700, EstimatedDeliveryDate: today.Format("2006-01-02"), Status: "shipped", CreatedAt: now.Add(-time.Hour)},
+	}
+	if err := db.Create(&orders).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	listIDs := func(query string) []uint {
+		t.Helper()
+		response := request(e, http.MethodGet, fmt.Sprintf("/api/orders?shopId=%d%s", shop.ID, query), "", "", cookie)
+		if response.Code != http.StatusOK {
+			t.Fatalf("list returned %d: %s", response.Code, response.Body.String())
+		}
+		var output struct {
+			Orders []struct {
+				ID uint `json:"id"`
+			} `json:"orders"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &output); err != nil {
+			t.Fatal(err)
+		}
+		ids := make([]uint, len(output.Orders))
+		for i, order := range output.Orders {
+			ids[i] = order.ID
+		}
+		return ids
+	}
+
+	for name, test := range map[string]struct {
+		query string
+		want  []uint
+	}{
+		"due by default": {want: []uint{orders[0].ID, orders[1].ID, orders[2].ID, orders[3].ID}},
+		"due soon":       {query: "&delivery=soon", want: []uint{orders[0].ID, orders[1].ID}},
+		"recent":         {query: "&sort=recent", want: []uint{orders[3].ID, orders[2].ID, orders[1].ID, orders[0].ID}},
+		"amount":         {query: "&sort=amount", want: []uint{orders[2].ID, orders[3].ID, orders[1].ID, orders[0].ID}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := listIDs(test.query); fmt.Sprint(got) != fmt.Sprint(test.want) {
+				t.Fatalf("order IDs = %v, want %v", got, test.want)
+			}
+		})
+	}
+	for _, query := range []string{"&delivery=later", "&sort=oldest"} {
+		if response := request(e, http.MethodGet, fmt.Sprintf("/api/orders?shopId=%d%s", shop.ID, query), "", "", cookie); response.Code != http.StatusBadRequest {
+			t.Fatalf("invalid list query %q returned %d", query, response.Code)
+		}
+	}
+}
+
+func TestCancelStaleWaitingInfoOrders(t *testing.T) {
+	db, _, _, _ := newAuthTestServer(t)
+	var shop Shop
+	if err := db.First(&shop).Error; err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	orders := []Order{
+		{CreateKey: "expiry-stale", CreateFingerprint: "expiry-stale", SecretToken: "expiry-stale", ShopID: shop.ID, Amount: 100, EstimatedDeliveryDate: now.Format("2006-01-02"), Status: waitingInfoStatus, CreatedAt: now.Add(-staleWaitingInfoAge)},
+		{CreateKey: "expiry-fresh", CreateFingerprint: "expiry-fresh", SecretToken: "expiry-fresh", ShopID: shop.ID, Amount: 100, EstimatedDeliveryDate: now.Format("2006-01-02"), Status: waitingInfoStatus, CreatedAt: now.Add(-staleWaitingInfoAge + time.Second)},
+		{CreateKey: "expiry-payment", CreateFingerprint: "expiry-payment", SecretToken: "expiry-payment", ShopID: shop.ID, Amount: 100, EstimatedDeliveryDate: now.Format("2006-01-02"), Status: waitingPaymentStatus, CreatedAt: now.Add(-2 * staleWaitingInfoAge)},
+	}
+	if err := db.Create(&orders).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	count, err := cancelStaleWaitingInfoOrders(db, now)
+	if err != nil || count != 1 {
+		t.Fatalf("cancelled %d orders, error %v", count, err)
+	}
+	var updated []Order
+	if err := db.Where("id IN ?", []uint{orders[0].ID, orders[1].ID, orders[2].ID}).Order("id").Find(&updated).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(updated) != 3 || updated[0].Status != "cancelled" || updated[1].Status != waitingInfoStatus || updated[2].Status != waitingPaymentStatus {
+		t.Fatalf("unexpected expiry statuses: %#v", updated)
+	}
+	var history []OrderStatusHistory
+	if err := db.Where("order_id = ?", orders[0].ID).Find(&history).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 1 || history[0].PreviousStatus != waitingInfoStatus || history[0].NewStatus != "cancelled" || history[0].ChangedByAdminID != nil {
+		t.Fatalf("unexpected expiry history: %#v", history)
+	}
+	if count, err := cancelStaleWaitingInfoOrders(db, now); err != nil || count != 0 {
+		t.Fatalf("repeat cancelled %d orders, error %v", count, err)
 	}
 }
 

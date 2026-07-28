@@ -377,6 +377,8 @@ The form must work well inside Instagram’s in-app browser.
 
 The customer should not lose entered information because of a minor connection issue or validation error.
 
+The payment card number must appear in a prominent, left-to-right box separate from supporting payment instructions. Copying it must place only the 16 ASCII digits, without spaces or punctuation, on the clipboard for compatibility with banking applications.
+
 ---
 
 # 9.7 Payment Receipt Upload
@@ -429,13 +431,14 @@ Each order card or row should show the most useful information at a glance:
 - Amount
 - Current status
 - Order age
+- Estimated delivery date and relative urgency
 - Shop name, when viewing multiple shops
 - Receipt indicator
 - Tracking code indicator
 
 The product should prioritize clarity over visual complexity.
 
-The initial dashboard may use a simple list or status-based board.
+The initial dashboard uses a simple card list, ordered by the nearest active delivery by default. The admin can quickly filter active orders that are overdue or due within seven days, filter by status, and sort by nearest delivery, newest order, or highest amount.
 
 The best layout should be chosen based on pilot usability, not visual novelty.
 
@@ -459,6 +462,8 @@ The admin must be able to change status quickly.
 Status changes should require no more than two taps or clicks.
 
 The order should keep a simple history of status changes so the admin can see what happened and when.
+
+An order still waiting for customer information is automatically cancelled after seven days from creation. This cleanup runs at startup and hourly, records status history, and never applies to receipt-submitted, paid, preparing, or shipped orders. The admin can restore an automatically cancelled order by changing its status.
 
 Advanced workflows and custom status builders are outside the MVP.
 

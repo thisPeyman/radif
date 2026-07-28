@@ -168,7 +168,7 @@ func TestShopOwnership(t *testing.T) {
 	if err := db.Create(&otherAdmin).Error; err != nil {
 		t.Fatal(err)
 	}
-	otherShop := Shop{OwnerAdminID: otherAdmin.ID, Name: "فروشگاه دیگر", PaymentInstructions: "آزمایشی", Active: true}
+	otherShop := Shop{OwnerAdminID: otherAdmin.ID, Name: "فروشگاه دیگر", PaymentCardNumber: "6037991812345678", PaymentInstructions: "آزمایشی", Active: true}
 	if err := db.Create(&otherShop).Error; err != nil {
 		t.Fatal(err)
 	}

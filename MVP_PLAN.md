@@ -75,7 +75,7 @@ Pilot data changes will be made through the seed command rather than temporary m
 | Customer details after submission | Locked for customer; editable by admin |
 | Receipt timing | Required in the same submission as customer details |
 | Receipt meaning | Uploaded only; admin must confirm payment |
-| Payment instructions | Seeded per shop and shown with a copy action |
+| Payment details | Seeded card number and supporting instructions per shop |
 | Pilot metrics | Raw events and CSV export, no charts |
 | Hosting | Persistent VPS |
 
@@ -164,6 +164,7 @@ Do not add a state manager, query library, form library, UI kit, CSS-in-JS solut
 - Name
 - Optional logo path
 - Optional short description
+- Payment card number as 16 canonical ASCII digits
 - Payment instructions
 - Active flag
 - Created and updated timestamps
@@ -246,6 +247,8 @@ Rules:
 - A new order starts at `waiting_info`.
 - Submitting customer details and a receipt changes it to `waiting_payment`.
 - Receipt submission never changes the order to `paid`.
+- A `waiting_info` order is automatically cancelled once it is seven days old; later statuses never expire automatically.
+- Automatic cancellation runs at startup and hourly, adds status history, and remains manually reversible.
 - The admin may choose any status; the pilot will not enforce a custom workflow engine.
 - Every actual status change adds one history entry.
 - A tracking code is visible to the customer when present.
@@ -356,7 +359,8 @@ Requirements:
 - Use appropriate `autocomplete` and `inputmode` attributes.
 - Persist text fields to local storage under the secret order token.
 - Clear the draft only after successful submission.
-- Show shop payment instructions with a copy action.
+- Show the card number in a prominent box and copy only its digits.
+- Show supporting payment instructions separately from the copied value.
 - Require one payment receipt image in the same form.
 - Explain that receipt upload does not itself confirm payment.
 - Use direct Persian validation messages beside the relevant field.
@@ -368,6 +372,9 @@ Requirements:
 - Put order code, product, customer, amount, age, receipt indicator, and status on the card.
 - Show missing customer details clearly for `waiting_info` orders.
 - Use status chips as the main filter.
+- Sort by nearest active delivery by default, with newest and highest-amount alternatives.
+- Provide a quick filter for active overdue orders and orders due within seven days.
+- Label delivery timing directly on each active order card.
 - Search name, mobile, order code, and Instagram username from one field.
 - Use a fixed “سفارش جدید” action where it does not cover content.
 - Provide an empty state that points directly to creating the first order.
@@ -513,7 +520,7 @@ Acceptance check: a repeat order can be created and its link copied through one 
 ### M6: Customer Information and Receipt
 
 - Build the public token lookup endpoint.
-- Build product summary, payment instructions, and one-page customer form.
+- Build product summary, structured payment details, and one-page customer form.
 - Implement Persian digit and Iranian mobile normalization.
 - Add local draft persistence and recovery.
 - Validate and store details atomically.
@@ -574,7 +581,7 @@ The smallest meaningful end-to-end check covers:
 2. Admin creates an order.
 3. A unique customer token and visible order code are generated.
 4. Customer opens the link.
-5. Customer sees the correct shop, products, amount, and payment instructions.
+5. Customer sees the correct shop, products, amount, card number, and payment instructions.
 6. Customer submits valid delivery details and one receipt in a single action.
 7. Order remains `waiting_payment`.
 8. Admin views the protected receipt and marks the order paid.

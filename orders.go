@@ -21,6 +21,7 @@ import (
 const (
 	waitingInfoStatus    = "waiting_info"
 	waitingPaymentStatus = "waiting_payment"
+	staleWaitingInfoAge  = 7 * 24 * time.Hour
 )
 
 var validOrderStatuses = map[string]bool{
@@ -29,6 +30,7 @@ var validOrderStatuses = map[string]bool{
 }
 
 var errOrderAlreadyCreated = errors.New("order already created")
+var iranTime = time.FixedZone("Iran", 3*60*60+30*60)
 
 func products(db *gorm.DB) echo.HandlerFunc {
 	return func(c echo.Context) error {
@@ -212,10 +214,38 @@ func orderCreatedResponse(c echo.Context, cfg config, order Order) error {
 }
 
 func validDeliveryDate(value string) bool {
-	iranTime := time.FixedZone("Iran", 3*60*60+30*60)
 	deliveryDate, err := time.ParseInLocation("2006-01-02", value, iranTime)
 	today, _ := time.ParseInLocation("2006-01-02", time.Now().In(iranTime).Format("2006-01-02"), iranTime)
 	return err == nil && !deliveryDate.Before(today)
+}
+
+func cancelStaleWaitingInfoOrders(db *gorm.DB, now time.Time) (int64, error) {
+	var cancelled int64
+	err := db.Transaction(func(tx *gorm.DB) error {
+		cutoff := now.Add(-staleWaitingInfoAge)
+		var orderIDs []uint
+		if err := tx.Model(&Order{}).Where("status = ? AND created_at <= ?", waitingInfoStatus, cutoff).Pluck("id", &orderIDs).Error; err != nil {
+			return err
+		}
+		for _, orderID := range orderIDs {
+			result := tx.Model(&Order{}).Where("id = ? AND status = ? AND created_at <= ?", orderID, waitingInfoStatus, cutoff).Update("status", "cancelled")
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				continue
+			}
+			if err := tx.Create(&OrderStatusHistory{OrderID: orderID, PreviousStatus: waitingInfoStatus, NewStatus: "cancelled"}).Error; err != nil {
+				return err
+			}
+			cancelled++
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return cancelled, nil
 }
 
 func updateOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
@@ -354,6 +384,17 @@ func listOrders(db *gorm.DB) echo.HandlerFunc {
 		if status != "" && !validOrderStatuses[status] {
 			return echo.NewHTTPError(http.StatusBadRequest, "وضعیت سفارش معتبر نیست.")
 		}
+		delivery := strings.TrimSpace(c.QueryParam("delivery"))
+		if delivery != "" && delivery != "soon" {
+			return echo.NewHTTPError(http.StatusBadRequest, "فیلتر زمان تحویل معتبر نیست.")
+		}
+		sortBy := strings.TrimSpace(c.QueryParam("sort"))
+		if sortBy == "" {
+			sortBy = "due"
+		}
+		if sortBy != "due" && sortBy != "recent" && sortBy != "amount" {
+			return echo.NewHTTPError(http.StatusBadRequest, "ترتیب سفارش‌ها معتبر نیست.")
+		}
 		search := strings.TrimSpace(c.QueryParam("q"))
 		if len([]rune(search)) > 100 {
 			return echo.NewHTTPError(http.StatusBadRequest, "عبارت جستجو بیش از حد طولانی است.")
@@ -361,6 +402,10 @@ func listOrders(db *gorm.DB) echo.HandlerFunc {
 		query := db.Preload("Items.Product").Where("shop_id = ?", shop.ID)
 		if status != "" {
 			query = query.Where("status = ?", status)
+		}
+		if delivery == "soon" {
+			through := time.Now().In(iranTime).AddDate(0, 0, 7).Format("2006-01-02")
+			query = query.Where("status NOT IN ? AND estimated_delivery_date <= ?", []string{"shipped", "cancelled"}, through)
 		}
 		if search != "" {
 			escaped := strings.NewReplacer("\\", "\\\\", "%", "\\%", "_", "\\_").Replace(search)
@@ -380,7 +425,15 @@ func listOrders(db *gorm.DB) echo.HandlerFunc {
 			query = query.Where("("+conditions+")", args...)
 		}
 		var orders []Order
-		if err := query.Order("created_at DESC, id DESC").Limit(100).Find(&orders).Error; err != nil {
+		switch sortBy {
+		case "due":
+			query = query.Order("CASE WHEN status IN ('shipped', 'cancelled') THEN 1 ELSE 0 END, estimated_delivery_date ASC, created_at DESC, id DESC")
+		case "amount":
+			query = query.Order("amount DESC, created_at DESC, id DESC")
+		default:
+			query = query.Order("created_at DESC, id DESC")
+		}
+		if err := query.Limit(100).Find(&orders).Error; err != nil {
 			return err
 		}
 		type orderSummary struct {
@@ -585,6 +638,7 @@ func publicOrderResponse(c echo.Context, status int, order Order) error {
 		"amount":                    order.Amount,
 		"status":                    order.Status,
 		"estimatedDeliveryDate":     order.EstimatedDeliveryDate,
+		"paymentCardNumber":         order.Shop.PaymentCardNumber,
 		"paymentInstructions":       order.Shop.PaymentInstructions,
 		"customerSubmitted":         submitted,
 		"customerSubmissionAllowed": !submitted && order.Status == waitingInfoStatus,

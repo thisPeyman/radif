@@ -26,6 +26,7 @@ type Shop struct {
 	Name                string `gorm:"not null;uniqueIndex:idx_shops_owner_name"`
 	LogoPath            string
 	ShortDescription    string
+	PaymentCardNumber   string `gorm:"not null"`
 	PaymentInstructions string `gorm:"not null"`
 	Active              bool   `gorm:"not null;index"`
 	CreatedAt           time.Time

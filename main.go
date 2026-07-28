@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -33,8 +34,28 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	startStaleOrderCancellation(db)
 	e := newServer(db, cfg)
 	e.Logger.Fatal(e.Start(":8080"))
+}
+
+func startStaleOrderCancellation(db *gorm.DB) {
+	cancel := func(now time.Time) {
+		count, err := cancelStaleWaitingInfoOrders(db, now)
+		if err != nil {
+			log.Printf("cancel stale orders: %v", err)
+		} else if count > 0 {
+			log.Printf("cancelled %d stale orders", count)
+		}
+	}
+	cancel(time.Now())
+	go func() {
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+		for now := range ticker.C {
+			cancel(now)
+		}
+	}()
 }
 
 func newServer(db *gorm.DB, cfg config) *echo.Echo {

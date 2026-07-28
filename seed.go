@@ -45,6 +45,7 @@ func seed(db *gorm.DB) error {
 		type seedShop struct {
 			name        string
 			description string
+			cardNumber  string
 			payment     string
 			logo        string
 			products    []seedProduct
@@ -53,7 +54,8 @@ func seed(db *gorm.DB) error {
 			{
 				name:        "خانه آبی",
 				description: "محصولات دست‌ساز برای خانه",
-				payment:     "مبلغ سفارش را به کارت ۶۰۳۷-۹۹۱۸-۱۲۳۴-۵۶۷۸ به نام فروشگاه خانه آبی واریز کنید.",
+				cardNumber:  "6037991812345678",
+				payment:     "به نام فروشگاه خانه آبی",
 				logo:        "/images/shop-blue.svg",
 				products: []seedProduct{
 					{"شمع موج", "شمع دست‌ساز معطر", "/images/product-blue.svg", 420_000},
@@ -63,7 +65,8 @@ func seed(db *gorm.DB) error {
 			{
 				name:        "نخ و نقش",
 				description: "پوشیدنی‌های ساده و رنگی",
-				payment:     "مبلغ سفارش را به کارت ۵۸۹۲-۱۰۱۱-۲۳۴۵-۶۷۸۹ به نام فروشگاه نخ و نقش واریز کنید.",
+				cardNumber:  "5892101123456789",
+				payment:     "به نام فروشگاه نخ و نقش",
 				logo:        "/images/shop-saffron.svg",
 				products: []seedProduct{
 					{"شال ماه", "شال نخی سبک", "/images/product-saffron.svg", 550_000},
@@ -77,6 +80,7 @@ func seed(db *gorm.DB) error {
 			if err := tx.Where(Shop{OwnerAdminID: admin.ID, Name: seededShop.name}).Assign(map[string]any{
 				"logo_path":            seededShop.logo,
 				"short_description":    seededShop.description,
+				"payment_card_number":  seededShop.cardNumber,
 				"payment_instructions": seededShop.payment,
 				"active":               true,
 			}).FirstOrCreate(&shop).Error; err != nil {
