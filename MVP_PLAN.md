@@ -81,7 +81,7 @@ Pilot data changes will be made through the seed command rather than temporary m
 
 ## 4. Technical Architecture
 
-Use one deployable application and one persistent data volume.
+Use one deployable application, PostgreSQL, and persistent receipt storage.
 
 ```text
 Browser
@@ -92,12 +92,11 @@ Go application using Echo
 ├── protected receipt responses
 └── /*              compiled React application
         |
-        ├── GORM → SQLite
+        ├── GORM → PostgreSQL
         └── local receipt directory
 
-Persistent VPS volume
-├── app.db
-└── receipts/
+PostgreSQL service → database storage
+Application volume → receipts/
 ```
 
 The Vite development server proxies API requests to Go. In production, Echo serves the compiled frontend, so no separate frontend service or API gateway is required.
@@ -106,7 +105,7 @@ The Vite development server proxies API requests to Go. In production, Echo serv
 
 - Go 1.26
 - Echo for routing and middleware
-- GORM with the official SQLite driver
+- GORM with the official PostgreSQL driver
 - GORM models and direct queries without repository or service layers
 - `AutoMigrate` for the pilot schema
 - Explicit transactions for order submission and status history
@@ -133,11 +132,12 @@ Do not add a state manager, query library, form library, UI kit, CSS-in-JS solut
 ### Deployment
 
 - Multi-stage Docker image
-- One application container with a mounted `/data` directory
+- One application container with a mounted `/data` receipt directory
+- PostgreSQL on the VPS or a managed PostgreSQL service
 - Existing VPS reverse proxy handles HTTPS
 - Add Caddy only if the VPS has no TLS reverse proxy
 - Environment variables provide cookie settings, origin, session lifetime, upload limits, and seed credentials
-- Daily SQLite-safe backup plus receipt directory backup
+- Daily PostgreSQL backup plus receipt directory backup
 
 ## 5. Data Model
 
@@ -420,7 +420,7 @@ Requirements:
 - Store receipts outside the public static directory.
 - Use temporary files and move them only after validation succeeds.
 - Add baseline security headers and a restrictive content security policy.
-- Enable SQLite foreign keys, WAL mode, and a busy timeout.
+- Use PostgreSQL foreign keys and a bounded connection pool.
 
 ## 10. Pilot Events
 
@@ -476,14 +476,14 @@ Acceptance check: the health endpoint responds, Vite development works, and a pr
 
 ### M2: Database and Seed Data
 
-- Configure GORM and SQLite pragmas.
+- Configure GORM and PostgreSQL.
 - Add the eight pilot models and relationships.
 - Run `AutoMigrate` during controlled application startup.
 - Add an idempotent seed subcommand for admins, shops, and products.
 - Store seed credentials in environment variables rather than source files.
 - Add representative Persian development data and replaceable sample images.
 
-Acceptance check: a blank data directory can be initialized and seeded repeatedly without duplicate records.
+Acceptance check: a blank database can be initialized and seeded repeatedly without duplicate records.
 
 ### M3: Authentication and Boundaries
 

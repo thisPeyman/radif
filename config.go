@@ -18,6 +18,13 @@ type config struct {
 	maxReceiptBytes int64
 }
 
+func dataDir() string {
+	if value := os.Getenv("DATA_DIR"); value != "" {
+		return value
+	}
+	return "data"
+}
+
 func loadConfig() (config, error) {
 	origin := strings.TrimSuffix(os.Getenv("APP_ORIGIN"), "/")
 	if origin == "" {
@@ -56,7 +63,7 @@ func loadConfig() (config, error) {
 		appOrigin:       origin,
 		sessionLifetime: lifetime,
 		secureCookies:   secureCookies,
-		receiptDir:      filepath.Join(filepath.Dir(databasePath()), "receipts"),
+		receiptDir:      filepath.Join(dataDir(), "receipts"),
 		maxReceiptBytes: maxReceiptBytes,
 	}, nil
 }

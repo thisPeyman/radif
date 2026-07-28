@@ -3,31 +3,35 @@ package main
 import (
 	"fmt"
 	"os"
-	"path/filepath"
+	"time"
 
-	"gorm.io/driver/sqlite"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
 
-func databasePath() string {
-	dataDir := os.Getenv("DATA_DIR")
-	if dataDir == "" {
-		dataDir = "data"
+const localDatabaseURL = "postgres://postgres:postgres@localhost:5433/insta_helper?sslmode=disable"
+
+func databaseURL() string {
+	if value := os.Getenv("DATABASE_URL"); value != "" {
+		return value
 	}
-	return filepath.Join(dataDir, "app.db")
+	return localDatabaseURL
 }
 
-func openDatabase(path string) (*gorm.DB, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
-		return nil, fmt.Errorf("create data directory: %w", err)
-	}
-
-	dsn := path + "?_foreign_keys=on&_journal_mode=WAL&_busy_timeout=5000"
-	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+func openDatabase(dsn string) (*gorm.DB, error) {
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, fmt.Errorf("get database connection: %w", err)
+	}
+	sqlDB.SetMaxOpenConns(10)
+	sqlDB.SetMaxIdleConns(5)
+	sqlDB.SetConnMaxIdleTime(5 * time.Minute)
+	sqlDB.SetConnMaxLifetime(time.Hour)
 	if err := db.AutoMigrate(
 		&Admin{},
 		&Session{},
@@ -38,6 +42,7 @@ func openDatabase(path string) (*gorm.DB, error) {
 		&OrderStatusHistory{},
 		&PilotEvent{},
 	); err != nil {
+		_ = sqlDB.Close()
 		return nil, fmt.Errorf("migrate database: %w", err)
 	}
 	return db, nil

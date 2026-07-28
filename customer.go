@@ -106,7 +106,7 @@ func prepareReceipt(cfg config, fileHeader *multipart.FileHeader) (*pendingRecei
 	}
 	dir := cfg.receiptDir
 	if dir == "" {
-		dir = filepath.Join(filepath.Dir(databasePath()), "receipts")
+		dir = filepath.Join(dataDir(), "receipts")
 	}
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return nil, err

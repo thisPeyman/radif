@@ -1,16 +1,55 @@
 package main
 
 import (
-	"path/filepath"
+	"crypto/rand"
+	"encoding/hex"
+	"net/url"
+	"os"
 	"testing"
+	"time"
+
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
-func TestMigrateAndSeedIsRepeatable(t *testing.T) {
-	t.Setenv("SEED_ADMIN_LOGIN", "admin")
-	t.Setenv("SEED_ADMIN_PASSWORD", "test-password")
-	t.Setenv("SEED_ADMIN_NAME", "مدیر آزمایشی")
+func openTestDatabase(t *testing.T) *gorm.DB {
+	t.Helper()
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		dsn = localDatabaseURL
+	}
+	base, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	baseSQL, err := base.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var suffix [8]byte
+	if _, err := rand.Read(suffix[:]); err != nil {
+		t.Fatal(err)
+	}
+	schema := "test_" + hex.EncodeToString(suffix[:])
+	if err := base.Exec(`CREATE SCHEMA "` + schema + `"`).Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := base.Exec(`DROP SCHEMA "` + schema + `" CASCADE`).Error; err != nil {
+			t.Errorf("drop test schema: %v", err)
+		}
+		_ = baseSQL.Close()
+	})
 
-	db, err := openDatabase(filepath.Join(t.TempDir(), "app.db"))
+	parsed, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	query := parsed.Query()
+	query.Set("search_path", schema)
+	parsed.RawQuery = query.Encode()
+	db, err := openDatabase(parsed.String())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -19,6 +58,15 @@ func TestMigrateAndSeedIsRepeatable(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = sqlDB.Close() })
+	return db
+}
+
+func TestMigrateAndSeedIsRepeatable(t *testing.T) {
+	t.Setenv("SEED_ADMIN_LOGIN", "admin")
+	t.Setenv("SEED_ADMIN_PASSWORD", "test-password")
+	t.Setenv("SEED_ADMIN_NAME", "مدیر آزمایشی")
+
+	db := openTestDatabase(t)
 
 	models := []any{
 		&Admin{}, &Session{}, &Shop{}, &Product{}, &Order{}, &OrderItem{}, &OrderStatusHistory{}, &PilotEvent{},
@@ -32,13 +80,8 @@ func TestMigrateAndSeedIsRepeatable(t *testing.T) {
 		t.Fatal("orders contains obsolete receipt_uploaded_at column")
 	}
 
-	var foreignKeys int
-	if err := db.Raw("PRAGMA foreign_keys").Scan(&foreignKeys).Error; err != nil || foreignKeys != 1 {
-		t.Fatalf("foreign_keys = %d, error = %v", foreignKeys, err)
-	}
-	var journalMode string
-	if err := db.Raw("PRAGMA journal_mode").Scan(&journalMode).Error; err != nil || journalMode != "wal" {
-		t.Fatalf("journal_mode = %q, error = %v", journalMode, err)
+	if err := db.Create(&Session{TokenHash: "invalid-admin", AdminID: 999999, ExpiresAt: time.Now().Add(time.Hour)}).Error; err == nil {
+		t.Fatal("sessions admin foreign key was not enforced")
 	}
 
 	if err := seed(db); err != nil {

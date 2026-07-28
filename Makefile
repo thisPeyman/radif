@@ -1,6 +1,16 @@
-.PHONY: dev dev-api dev-web seed build run check
+.PHONY: db-up db-down dev dev-api dev-web seed build run check
 
-dev:
+DATABASE_URL ?= postgres://postgres:postgres@localhost:5433/insta_helper?sslmode=disable
+TEST_DATABASE_URL ?= postgres://postgres:postgres@localhost:5433/insta_helper?sslmode=disable
+export DATABASE_URL TEST_DATABASE_URL
+
+db-up:
+	docker compose up -d --wait db
+
+db-down:
+	docker compose down
+
+dev: db-up
 	@trap 'kill 0' INT TERM EXIT; $(MAKE) dev-api & $(MAKE) dev-web
 
 dev-api:
@@ -9,7 +19,7 @@ dev-api:
 dev-web:
 	npm --prefix web run dev
 
-seed:
+seed: db-up
 	go run . seed
 
 build:
@@ -19,7 +29,7 @@ build:
 run: build
 	./bin/insta-helper
 
-check:
+check: db-up
 	go test ./...
 	npm --prefix web run typecheck
 	npm --prefix web run build

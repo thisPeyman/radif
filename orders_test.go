@@ -254,7 +254,7 @@ func TestOrderOperations(t *testing.T) {
 		"name":       "سارا",
 		"mobile":     "+۹۸ ۹۱۲ ۳۴۵ ۶۷۸۹",
 		"order code": fmt.Sprintf("#%d", order.ID),
-		"instagram":  "sara_shop",
+		"instagram":  "SARA_SHOP",
 	} {
 		t.Run("search "+name, func(t *testing.T) {
 			response := request(e, http.MethodGet, fmt.Sprintf("/api/orders?shopId=%d&q=%s&status=%s", order.ShopID, url.QueryEscape(query), waitingPaymentStatus), "", "", cookie)

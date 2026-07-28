@@ -14,7 +14,7 @@ import (
 )
 
 func main() {
-	db, err := openDatabase(databasePath())
+	db, err := openDatabase(databaseURL())
 	if err != nil {
 		log.Fatal(err)
 	}

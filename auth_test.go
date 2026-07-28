@@ -22,15 +22,7 @@ func newAuthTestServer(t *testing.T) (*gorm.DB, *echo.Echo, config, Admin) {
 	t.Setenv("SEED_ADMIN_NAME", "مدیر آزمایشی")
 
 	testDir := t.TempDir()
-	db, err := openDatabase(filepath.Join(testDir, "app.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	sqlDB, err := db.DB()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = sqlDB.Close() })
+	db := openTestDatabase(t)
 	if err := seed(db); err != nil {
 		t.Fatal(err)
 	}

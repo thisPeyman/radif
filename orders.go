@@ -411,7 +411,7 @@ func listOrders(db *gorm.DB) echo.HandlerFunc {
 			escaped := strings.NewReplacer("\\", "\\\\", "%", "\\%", "_", "\\_").Replace(search)
 			like := "%" + escaped + "%"
 			mobile := normalizeIranianMobile(search)
-			conditions := "customer_full_name LIKE ? ESCAPE '\\' OR instagram_username LIKE ? ESCAPE '\\'"
+			conditions := "customer_full_name ILIKE ? ESCAPE '\\' OR instagram_username ILIKE ? ESCAPE '\\'"
 			args := []any{like, like}
 			if mobile != "" {
 				conditions += " OR customer_mobile LIKE ?"
