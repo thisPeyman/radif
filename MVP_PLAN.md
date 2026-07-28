@@ -33,7 +33,7 @@ The primary success condition is that a repeat order can be created and its link
 - Iranian mobile number normalization and validation
 - Optional postal code and customer note
 - Local form draft recovery
-- Initial or later payment receipt upload
+- Mandatory payment receipt submitted with customer details
 - Mobile order dashboard with search and status filters
 - Order details and protected receipt preview
 - Admin correction of submitted customer details
@@ -73,7 +73,7 @@ Pilot data changes will be made through the seed command rather than temporary m
 | Shop and product setup | Seeded for pilot shops |
 | Customer account | None |
 | Customer details after submission | Locked for customer; editable by admin |
-| Receipt timing | During initial form or later from the same link |
+| Receipt timing | Required in the same submission as customer details |
 | Receipt meaning | Uploaded only; admin must confirm payment |
 | Payment instructions | Seeded per shop and shown with a copy action |
 | Pilot metrics | Raw events and CSV export, no charts |
@@ -195,7 +195,7 @@ One owner column is sufficient because multi-admin collaboration is outside the 
 - Full address
 - Optional postal code
 - Optional customer note
-- Receipt file path and upload timestamp
+- Receipt file path
 - Current status
 - Shipment tracking code
 - Customer submission timestamp
@@ -244,12 +244,11 @@ Do not introduce separate receipt, address, event-property, or audit tables unti
 Rules:
 
 - A new order starts at `waiting_info`.
-- Customer form submission changes it to `waiting_payment`.
-- Uploading a receipt never changes it to `paid`.
+- Submitting customer details and a receipt changes it to `waiting_payment`.
+- Receipt submission never changes the order to `paid`.
 - The admin may choose any status; the pilot will not enforce a custom workflow engine.
 - Every actual status change adds one history entry.
 - A tracking code is visible to the customer when present.
-- Later receipt upload closes after payment confirmation or cancellation.
 
 ## 7. API Surface
 
@@ -275,8 +274,7 @@ Keep the API small and same-origin.
 | Method | Route | Purpose |
 | --- | --- | --- |
 | `GET` | `/api/o/:token` | Form context or public status data |
-| `POST` | `/api/o/:token/details` | Submit customer details and optional receipt |
-| `POST` | `/api/o/:token/receipt` | Upload a receipt after form submission |
+| `POST` | `/api/o/:token/details` | Submit customer details and one required receipt atomically |
 
 Admin order responses may include private operational data. Customer responses must include only shop identity, product summary, amount, estimated delivery date, public status, latest update, receipt state, and tracking code.
 
@@ -359,7 +357,7 @@ Requirements:
 - Persist text fields to local storage under the secret order token.
 - Clear the draft only after successful submission.
 - Show shop payment instructions with a copy action.
-- Allow an optional screenshot upload.
+- Require one payment receipt image in the same form.
 - Explain that receipt upload does not itself confirm payment.
 - Use direct Persian validation messages beside the relevant field.
 - Keep entered text after network and server errors.
@@ -392,7 +390,6 @@ Requirements:
 - Show order code, shop, product, amount, current status, and latest update.
 - Show the current estimated delivery date.
 - Present a simple vertical timeline derived from status history.
-- Offer later receipt upload while it is allowed.
 - Show and copy the tracking code when available.
 - Never expose address, internal notes, admin identity, or other orders.
 
@@ -428,12 +425,11 @@ Record only events needed to evaluate the product hypotheses:
 - `order_link_copied`
 - `customer_link_opened`
 - `customer_form_submitted`
-- `receipt_uploaded`
 - `customer_status_viewed`
 - `order_status_changed`
 - `tracking_code_added`
 
-Useful metadata includes elapsed order creation milliseconds, previous and new status, whether a receipt accompanied initial submission, and user-agent category. Do not copy customer PII into event metadata.
+Useful metadata includes elapsed order creation milliseconds, previous and new status, and user-agent category. Do not copy customer PII into event metadata.
 
 The CSV export should support measuring:
 
@@ -521,11 +517,10 @@ Acceptance check: a repeat order can be created and its link copied through one 
 - Implement Persian digit and Iranian mobile normalization.
 - Add local draft persistence and recovery.
 - Validate and store details atomically.
-- Add optional initial receipt upload.
+- Require one receipt and store it atomically with customer details.
 - Move status to `waiting_payment` and append history after successful submission.
-- Add later receipt upload while allowed.
 
-Acceptance check: refresh and validation errors preserve text, a successful submission locks customer editing, and receipt upload does not mark payment as paid.
+Acceptance check: refresh and validation errors preserve text, details cannot be submitted without one valid receipt, a successful submission locks customer editing, and receipt submission does not mark payment as paid.
 
 ### M7: Order Operations
 
@@ -544,7 +539,6 @@ Acceptance check: an admin can find and operate an order without returning to In
 - Switch the public route from form to status view after submission.
 - Add a Persian status summary and timeline.
 - Display latest update and receipt state.
-- Show later receipt upload when allowed.
 - Show tracking code when present.
 - Verify the response never contains private admin data.
 
@@ -581,7 +575,7 @@ The smallest meaningful end-to-end check covers:
 3. A unique customer token and visible order code are generated.
 4. Customer opens the link.
 5. Customer sees the correct shop, products, amount, and payment instructions.
-6. Customer submits valid delivery details and a receipt.
+6. Customer submits valid delivery details and one receipt in a single action.
 7. Order remains `waiting_payment`.
 8. Admin views the protected receipt and marks the order paid.
 9. Admin moves the order to preparing and then shipped.

@@ -192,8 +192,8 @@ If creating an order feels slow, complicated, or repetitive, the admin will retu
    - Full delivery address
    - Postal code, if required
    - Optional note
-5. The customer optionally uploads a payment receipt.
-6. The customer submits the form.
+5. The customer selects one payment receipt image.
+6. The customer submits the delivery details and receipt together.
 7. The customer sees a confirmation screen and order code.
 8. The same link becomes the customer’s order status page.
 9. After shipment, the customer sees the shipment tracking code.
@@ -354,12 +354,12 @@ Required fields:
 - Full name
 - Mobile number
 - Full address
+- One payment receipt image
 
 Optional or configurable fields:
 
 - Postal code
 - Order note
-- Payment receipt
 
 Product and amount should already be attached to the order and should not need to be reselected by the customer.
 
@@ -381,9 +381,9 @@ The customer should not lose entered information because of a minor connection i
 
 # 9.7 Payment Receipt Upload
 
-The customer may upload a screenshot of the card-to-card payment receipt.
+The customer must upload one screenshot of the card-to-card payment receipt with the delivery details.
 
-This feature is optional for each order.
+The details and receipt are one atomic submission. Neither can be submitted separately or changed by the customer afterward.
 
 The receipt should appear inside the order details for the admin.
 
@@ -396,7 +396,7 @@ The product should clearly separate:
 - Receipt uploaded
 - Payment confirmed
 
-Uploading a receipt must not automatically change the order to “Paid” unless the admin confirms it.
+Submitting a receipt must not automatically change the order to “Paid” unless the admin confirms it.
 
 The MVP should not include:
 
@@ -562,8 +562,7 @@ It may be used only as an optional notification channel for the admin.
 
 Useful notifications may include:
 
-- Customer completed the form
-- Customer uploaded a receipt
+- Customer submitted delivery details and a receipt
 - Order was created
 - Order has remained in one status for too long
 
@@ -809,7 +808,7 @@ It starts after the customer agrees to buy.
 
 The admin creates a lightweight order and sends a unique link.
 
-The customer completes delivery details and optionally uploads a receipt.
+The customer submits delivery details and one payment receipt together.
 
 The admin tracks the order through a small set of statuses.
 

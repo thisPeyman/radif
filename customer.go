@@ -74,13 +74,10 @@ func parseCustomerDetails(c echo.Context) (customerDetails, *multipart.FileHeade
 		return customerDetails{}, nil, err
 	}
 	files := c.Request().MultipartForm.File["receipt"]
-	if len(files) > 1 {
-		return customerDetails{}, nil, echo.NewHTTPError(http.StatusBadRequest, "فقط یک تصویر رسید انتخاب کنید.")
+	if len(files) != 1 {
+		return customerDetails{}, nil, echo.NewHTTPError(http.StatusBadRequest, "یک تصویر رسید پرداخت انتخاب کنید.")
 	}
-	if len(files) == 1 {
-		return details, files[0], nil
-	}
-	return details, nil, nil
+	return details, files[0], nil
 }
 
 func validateCustomerDetails(details customerDetails) error {
@@ -103,9 +100,6 @@ func validateCustomerDetails(details customerDetails) error {
 }
 
 func prepareReceipt(cfg config, fileHeader *multipart.FileHeader) (*pendingReceipt, error) {
-	if fileHeader == nil {
-		return nil, nil
-	}
 	maxBytes := cfg.maxReceiptBytes
 	if maxBytes <= 0 {
 		maxBytes = 5 << 20
@@ -219,13 +213,10 @@ func submitCustomerDetails(db *gorm.DB, cfg config) echo.HandlerFunc {
 				"customer_address": details.address, "customer_postal_code": details.postalCode,
 				"customer_note": details.note, "customer_submitted_at": now, "status": waitingPaymentStatus,
 			}
-			if receipt != nil {
-				if err := receipt.commit(); err != nil {
-					return err
-				}
-				updates["receipt_file_path"] = receipt.storedName
-				updates["receipt_uploaded_at"] = now
+			if err := receipt.commit(); err != nil {
+				return err
 			}
+			updates["receipt_file_path"] = receipt.storedName
 			result := tx.Model(&Order{}).Where("id = ? AND customer_submitted_at IS NULL AND status = ?", order.ID, waitingInfoStatus).Updates(updates)
 			if result.Error != nil {
 				return result.Error
@@ -234,65 +225,6 @@ func submitCustomerDetails(db *gorm.DB, cfg config) echo.HandlerFunc {
 				return echo.NewHTTPError(http.StatusConflict, "اطلاعات این سفارش قبلاً ثبت شده است.")
 			}
 			return tx.Create(&OrderStatusHistory{OrderID: order.ID, PreviousStatus: order.Status, NewStatus: waitingPaymentStatus}).Error
-		})
-		if err != nil {
-			return err
-		}
-		receipt = nil
-		updated, err := findPublicOrder(db, c.Param("token"))
-		if err != nil {
-			return err
-		}
-		return publicOrderResponse(c, http.StatusOK, updated)
-	}
-}
-
-func uploadCustomerReceipt(db *gorm.DB, cfg config) echo.HandlerFunc {
-	return func(c echo.Context) error {
-		maxBytes := cfg.maxReceiptBytes
-		if maxBytes <= 0 {
-			maxBytes = 5 << 20
-		}
-		c.Request().Body = http.MaxBytesReader(c.Response(), c.Request().Body, maxBytes+(1<<20))
-		if err := c.Request().ParseMultipartForm(1 << 20); err != nil {
-			var tooLarge *http.MaxBytesError
-			if errors.As(err, &tooLarge) {
-				return echo.NewHTTPError(http.StatusRequestEntityTooLarge, "حجم رسید بیش از حد مجاز است.")
-			}
-			return echo.NewHTTPError(http.StatusBadRequest, "تصویر رسید معتبر نیست.")
-		}
-		files := c.Request().MultipartForm.File["receipt"]
-		if len(files) != 1 {
-			return echo.NewHTTPError(http.StatusBadRequest, "یک تصویر رسید انتخاب کنید.")
-		}
-		order, err := findPublicOrder(db, c.Param("token"))
-		if err != nil {
-			return err
-		}
-		if order.CustomerSubmittedAt == nil || order.ReceiptFilePath != "" || order.Status == "paid" || order.Status == "cancelled" {
-			return echo.NewHTTPError(http.StatusConflict, "بارگذاری رسید برای این سفارش امکان‌پذیر نیست.")
-		}
-		receipt, err := prepareReceipt(cfg, files[0])
-		if err != nil {
-			return err
-		}
-		defer func() { receipt.discard() }()
-		now := time.Now()
-		err = db.Transaction(func(tx *gorm.DB) error {
-			if err := receipt.commit(); err != nil {
-				return err
-			}
-			result := tx.Model(&Order{}).Where(
-				"id = ? AND customer_submitted_at IS NOT NULL AND receipt_file_path = ? AND status NOT IN ?",
-				order.ID, "", []string{"paid", "cancelled"},
-			).Updates(map[string]any{"receipt_file_path": receipt.storedName, "receipt_uploaded_at": now})
-			if result.Error != nil {
-				return result.Error
-			}
-			if result.RowsAffected != 1 {
-				return echo.NewHTTPError(http.StatusConflict, "بارگذاری رسید برای این سفارش امکان‌پذیر نیست.")
-			}
-			return nil
 		})
 		if err != nil {
 			return err

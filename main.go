@@ -46,7 +46,7 @@ func newServer(db *gorm.DB, cfg config) *echo.Echo {
 	e.Use(middleware.SecureWithConfig(middleware.SecureConfig{
 		ContentTypeNosniff:    "nosniff",
 		XFrameOptions:         "DENY",
-		ContentSecurityPolicy: "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'",
+		ContentSecurityPolicy: "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self'",
 		ReferrerPolicy:        "no-referrer",
 	}))
 
@@ -67,7 +67,6 @@ func newServer(db *gorm.DB, cfg config) *echo.Echo {
 	e.POST("/api/orders/:orderID/link-copied", recordLinkCopied(db), requireAdmin(db, cfg), origin)
 	e.GET("/api/o/:token", publicOrder(db))
 	e.POST("/api/o/:token/details", submitCustomerDetails(db, cfg), origin)
-	e.POST("/api/o/:token/receipt", uploadCustomerReceipt(db, cfg), origin)
 
 	e.Use(middleware.StaticWithConfig(middleware.StaticConfig{
 		Skipper: func(c echo.Context) bool {

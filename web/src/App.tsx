@@ -17,6 +17,7 @@ import {
   Upload,
   UserRound,
 } from "lucide-react";
+import { DayPicker } from "@daypicker/persian";
 import { useDeferredValue, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
   Navigate,
@@ -74,7 +75,6 @@ type PublicOrder = {
   customerSubmitted: boolean;
   customerSubmissionAllowed: boolean;
   receiptUploaded: boolean;
-  receiptUploadAllowed: boolean;
   shipmentTrackingCode?: string;
   updatedAt: string;
   history: { status: string; createdAt: string }[];
@@ -112,7 +112,6 @@ type AdminOrder = {
   customerNote: string;
   customerSubmitted: boolean;
   receiptUploaded: boolean;
-  receiptUploadedAt?: string;
   receiptUrl?: string;
   shipmentTrackingCode: string;
   customerUrl: string;
@@ -153,10 +152,8 @@ const dateFormat = new Intl.DateTimeFormat("fa-IR", { dateStyle: "long", timeZon
 const dateTimeFormat = new Intl.DateTimeFormat("fa-IR", { dateStyle: "long", timeStyle: "short" });
 const relativeTimeFormat = new Intl.RelativeTimeFormat("fa-IR", { numeric: "auto" });
 const tehranDateFormat = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Tehran", year: "numeric", month: "2-digit", day: "2-digit" });
-const persianDatePartsFormat = new Intl.DateTimeFormat("fa-IR-u-ca-persian-nu-latn", { timeZone: "UTC", year: "numeric", month: "numeric", day: "numeric" });
 const latinDigits = "0123456789";
 const persianDigits = "۰۱۲۳۴۵۶۷۸۹";
-const persianMonths = ["فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور", "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند"];
 
 function normalizeDigits(value: string) {
   return value
@@ -219,58 +216,89 @@ function relativeAge(value: string) {
   return relativeTimeFormat.format(Math.round(hours / 24), "day");
 }
 
-type DateChoice = { iso: string; year: number; month: number; day: number };
-
-function dateChoice(iso: string): DateChoice {
-  const parts = Object.fromEntries(persianDatePartsFormat.formatToParts(new Date(`${iso}T12:00:00Z`)).map((part) => [part.type, part.value]));
-  return { iso, year: Number(parts.year), month: Number(parts.month), day: Number(parts.day) };
+function dateFromISO(value: string) {
+  if (!value) return undefined;
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year, month - 1, day, 12);
 }
 
-const deliveryDateStart = new Date(`${todayISO()}T12:00:00Z`);
-// ponytail: two years covers delivery promises; extend this range if long-term preorders appear.
-const deliveryDateChoices = Array.from({ length: 731 }, (_, offset) => {
-  const date = new Date(deliveryDateStart);
-  date.setUTCDate(date.getUTCDate() + offset);
-  return dateChoice(date.toISOString().slice(0, 10));
-});
+function dateToISO(value: Date) {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
 
 function DeliveryDateSelect({ id, value, onChange, invalid, describedBy }: { id: string; value: string; onChange: (value: string) => void; invalid?: boolean; describedBy?: string }) {
-  const initial = value ? dateChoice(value) : null;
-  const [year, setYear] = useState(initial?.year.toString() ?? "");
-  const [month, setMonth] = useState(initial?.month.toString() ?? "");
-  const [day, setDay] = useState(initial?.day.toString() ?? "");
-  const choices = value && !deliveryDateChoices.some((choice) => choice.iso === value) ? [dateChoice(value), ...deliveryDateChoices] : deliveryDateChoices;
-  const years = [...new Set(choices.map((choice) => choice.year))];
-  const months = [...new Set(choices.filter((choice) => choice.year === Number(year)).map((choice) => choice.month))];
-  const days = choices.filter((choice) => choice.year === Number(year) && choice.month === Number(month)).map((choice) => choice.day);
-
-  useEffect(() => {
-    const selected = value ? dateChoice(value) : null;
-    setYear(selected?.year.toString() ?? "");
-    setMonth(selected?.month.toString() ?? "");
-    setDay(selected?.day.toString() ?? "");
-  }, [value]);
-
-  function selectDay(nextDay: string) {
-    setDay(nextDay);
-    const selected = choices.find((choice) => choice.year === Number(year) && choice.month === Number(month) && choice.day === Number(nextDay));
-    onChange(selected?.iso ?? "");
-  }
+  const [open, setOpen] = useState(false);
+  const selected = dateFromISO(value);
+  const today = dateFromISO(todayISO())!;
+  const endMonth = new Date(today);
+  endMonth.setFullYear(endMonth.getFullYear() + 2);
 
   return (
-    <div id={id} className="grid grid-cols-3 gap-2" role="group" aria-label="تاریخ تخمینی تحویل" aria-describedby={describedBy}>
-      <select className="field px-2" value={year} onChange={(event) => { setYear(event.target.value); setMonth(""); setDay(""); }} aria-label="سال" aria-invalid={invalid}>
-        <option value="">سال</option>
-        {years.map((option) => <option key={option} value={option}>{persianNumber(option)}</option>)}
-      </select>
-      <select className="field px-2" value={month} disabled={!year} onChange={(event) => { setMonth(event.target.value); setDay(""); }} aria-label="ماه" aria-invalid={invalid}>
-        <option value="">ماه</option>
-        {months.map((option) => <option key={option} value={option}>{persianMonths[option - 1]}</option>)}
-      </select>
-      <select className="field px-2" value={day} disabled={!month} onChange={(event) => selectDay(event.target.value)} aria-label="روز" aria-invalid={invalid}>
-        <option value="">روز</option>
-        {days.map((option) => <option key={option} value={option}>{persianNumber(option)}</option>)}
-      </select>
+    <div>
+      <button id={id} className="field flex items-center justify-between gap-3 text-right font-bold" type="button" onClick={() => setOpen((current) => !current)} aria-controls={`${id}-calendar`} aria-describedby={describedBy} aria-expanded={open} aria-invalid={invalid}>
+        <span className={selected ? "text-ink" : "text-ink/60"}>{selected ? persianDate(value) : "انتخاب تاریخ"}</span>
+        <CalendarDays className="size-5 shrink-0 text-teal" aria-hidden="true" />
+      </button>
+      {open && (
+        <div id={`${id}-calendar`} className="delivery-calendar mt-2 rounded-2xl border border-ledger bg-white p-3 shadow-sm" role="region" aria-label="تقویم تاریخ تحویل">
+          <DayPicker
+            mode="single"
+            selected={selected}
+            defaultMonth={selected ?? today}
+            startMonth={today}
+            endMonth={endMonth}
+            disabled={{ before: today }}
+            onSelect={(day) => {
+              if (!day) return;
+              onChange(dateToISO(day));
+              setOpen(false);
+            }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ReceiptPicker({ id, file, onChange }: { id: string; file: File | null; onChange: (file: File | null) => void }) {
+  const input = useRef<HTMLInputElement>(null);
+  const [preview, setPreview] = useState("");
+
+  useEffect(() => {
+    if (!file) {
+      setPreview("");
+      if (input.current) input.current.value = "";
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+
+  return (
+    <div>
+      <input ref={input} id={id} className="hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => onChange(event.target.files?.[0] ?? null)} />
+      {!file ? (
+        <button className="secondary-button w-full" type="button" onClick={() => input.current?.click()}>
+          <Upload className="size-5" aria-hidden="true" />
+          انتخاب تصویر رسید
+        </button>
+      ) : (
+        <div className="overflow-hidden rounded-2xl border border-teal/30 bg-teal/5">
+          <img className="h-48 w-full bg-ledger object-contain" src={preview} alt="پیش‌نمایش رسید انتخاب‌شده" />
+          <div className="p-3">
+            <p className="truncate text-sm font-bold" dir="auto">{file.name}</p>
+            <p className="mt-1 text-xs text-ink/60">{(file.size / 1048576).toLocaleString("fa-IR", { maximumFractionDigits: 1 })} مگابایت</p>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button className="secondary-button min-h-11 px-3 text-sm" type="button" onClick={() => input.current?.click()}>تغییر تصویر</button>
+              <button className="secondary-button min-h-11 px-3 text-sm text-error" type="button" onClick={() => onChange(null)}>حذف</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -532,7 +560,7 @@ function OrdersPage({ shop }: { shop: Shop }) {
                 <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${statusStyles[order.status]?.chip ?? "bg-ledger"}`}>{adminStatusLabels[order.status] ?? order.status}</span>
               </div>
               <div className="mt-4 flex items-end justify-between gap-3 border-t border-ledger pt-3 text-sm">
-                <span><span className="block text-xs text-ink/70">تحویل تخمینی</span><strong>{persianDate(order.estimatedDeliveryDate)}</strong></span>
+                <span><span className="block text-xs text-ink/70">تحویل</span><strong>{persianDate(order.estimatedDeliveryDate)}</strong></span>
                 <span className="text-left"><strong>{persianNumber(order.amount)} تومان</strong><span className="mt-1 flex justify-end gap-2 text-xs text-ink/65">{order.receiptUploaded && <span>رسید دارد</span>}{order.hasTrackingCode && <span>کد رهگیری دارد</span>}</span></span>
               </div>
             </NavLink>
@@ -628,11 +656,9 @@ function PublicOrderPage() {
   const [draft, setDraft] = useState<CustomerDraft>(() => readCustomerDraft(token));
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof CustomerDraft, string>>>({});
   const [receipt, setReceipt] = useState<File | null>(null);
-  const [laterReceipt, setLaterReceipt] = useState<File | null>(null);
+  const [receiptError, setReceiptError] = useState("");
   const [pending, setPending] = useState(false);
-  const [receiptPending, setReceiptPending] = useState(false);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
-  const laterReceiptInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -653,7 +679,7 @@ function PublicOrderPage() {
     setDraft(readCustomerDraft(token));
     setFieldErrors({});
     setReceipt(null);
-    setLaterReceipt(null);
+    setReceiptError("");
   }, [token]);
 
   useEffect(() => {
@@ -689,7 +715,8 @@ function PublicOrderPage() {
     if (!/^09\d{9}$/.test(normalizedMobile)) errors.mobile = "شماره موبایل معتبر ایرانی وارد کنید.";
     if (!draft.address.trim()) errors.address = "نشانی کامل را وارد کنید.";
     if (normalizedPostalCode && !/^\d{10}$/.test(normalizedPostalCode)) errors.postalCode = "کد پستی باید ۱۰ رقم باشد.";
-    if (Object.keys(errors).length) {
+    if (!receipt) setReceiptError("تصویر رسید پرداخت را انتخاب کنید.");
+    if (Object.keys(errors).length || !receipt) {
       setFieldErrors(errors);
       return;
     }
@@ -699,7 +726,7 @@ function PublicOrderPage() {
     form.set("address", draft.address.trim());
     form.set("postalCode", normalizedPostalCode);
     form.set("note", draft.note.trim());
-    if (receipt) form.set("receipt", receipt);
+    form.set("receipt", receipt);
     setPending(true);
     setError("");
     try {
@@ -711,25 +738,6 @@ function PublicOrderPage() {
       setError(reason instanceof Error ? reason.message : "اطلاعات ثبت نشد. دوباره تلاش کنید.");
     } finally {
       setPending(false);
-    }
-  }
-
-  async function submitLaterReceipt(event: FormEvent) {
-    event.preventDefault();
-    if (!laterReceipt) return;
-    const form = new FormData();
-    form.set("receipt", laterReceipt);
-    setReceiptPending(true);
-    setError("");
-    try {
-      const updated = await api<PublicOrder>(`/api/o/${encodeURIComponent(token)}/receipt`, { method: "POST", body: form });
-      setOrder(updated);
-      setLaterReceipt(null);
-      if (laterReceiptInput.current) laterReceiptInput.current.value = "";
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "رسید بارگذاری نشد. دوباره تلاش کنید.");
-    } finally {
-      setReceiptPending(false);
     }
   }
 
@@ -761,7 +769,7 @@ function PublicOrderPage() {
             <div className="flex items-center gap-3">
               <span className="grid size-11 place-items-center rounded-2xl bg-saffron text-ink"><CalendarDays className="size-5" aria-hidden="true" /></span>
               <div>
-                <p className="text-xs font-bold text-ink/70">تاریخ تخمینی تحویل</p>
+                <p className="text-xs font-bold text-ink/70">تاریخ تحویل</p>
                 <p className="mt-1 text-lg font-black">{persianDate(order.estimatedDeliveryDate)}</p>
               </div>
             </div>
@@ -825,15 +833,16 @@ function PublicOrderPage() {
                 <span className="mb-2 block text-sm font-bold">یادداشت برای فروشگاه <span className="font-normal text-ink/60">(اختیاری)</span></span>
                 <textarea id="customer-note" className="field min-h-24 py-3" value={draft.note} onChange={(event) => updateDraft("note", event.target.value)} />
               </label>
-              <label className="block" htmlFor="customer-receipt">
-                <span className="mb-2 block text-sm font-bold">تصویر رسید <span className="font-normal text-ink/60">(اختیاری)</span></span>
-                <input id="customer-receipt" className="field py-3" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setReceipt(event.target.files?.[0] ?? null)} />
+              <div>
+                <span className="mb-2 block text-sm font-bold">تصویر رسید پرداخت</span>
+                <ReceiptPicker id="customer-receipt" file={receipt} onChange={(file) => { setReceipt(file); setReceiptError(""); }} />
+                {receiptError && <span className="mt-2 block text-sm text-error" role="alert">{receiptError}</span>}
                 <span className="mt-2 block text-xs leading-6 text-ink/65">بارگذاری رسید به معنی تأیید پرداخت نیست؛ فروشگاه آن را بررسی می‌کند.</span>
-              </label>
+              </div>
               {error && <ErrorNotice>{error}</ErrorNotice>}
               <button className="primary-button w-full" type="submit" disabled={pending}>
                 {pending ? <LoaderCircle className="size-5 animate-spin" aria-hidden="true" /> : <Check className="size-5" aria-hidden="true" />}
-                {pending ? "در حال ثبت…" : "ثبت اطلاعات تحویل"}
+                {pending ? "در حال ثبت…" : "ثبت اطلاعات و ارسال رسید"}
               </button>
             </form>
           )}
@@ -886,18 +895,6 @@ function PublicOrderPage() {
             </section>
           )}
 
-          {order.receiptUploadAllowed && (
-            <form className="mt-5 rounded-3xl border border-ledger bg-white p-5" onSubmit={submitLaterReceipt}>
-              <h2 className="font-black">بارگذاری رسید پرداخت</h2>
-              <p className="mt-1 text-sm leading-7 text-ink/70">می‌توانید تصویر رسید را بعداً هم بفرستید. رسید پس از بررسی فروشگاه تأیید می‌شود.</p>
-              <input ref={laterReceiptInput} className="field mt-4 py-3" type="file" required accept="image/jpeg,image/png,image/webp" onChange={(event) => setLaterReceipt(event.target.files?.[0] ?? null)} aria-label="تصویر رسید پرداخت" />
-              {error && <div className="mt-4"><ErrorNotice>{error}</ErrorNotice></div>}
-              <button className="secondary-button mt-4 w-full" type="submit" disabled={!laterReceipt || receiptPending}>
-                {receiptPending ? <LoaderCircle className="size-5 animate-spin" aria-hidden="true" /> : <Upload className="size-5" aria-hidden="true" />}
-                {receiptPending ? "در حال بارگذاری…" : "بارگذاری رسید"}
-              </button>
-            </form>
-          )}
         </main>
       )}
     </div>
@@ -1049,7 +1046,7 @@ function AdminOrderPage() {
 
       <section className="mt-5 rounded-3xl border border-ledger bg-white p-5">
         <h2 className="font-black">تحویل و ارسال</h2>
-        <p className="mt-4 text-sm font-bold">تاریخ تخمینی تحویل</p>
+        <p className="mt-4 text-sm font-bold">تاریخ تحویل</p>
         <div className="mt-2"><DeliveryDateSelect id="order-delivery-date" value={date} onChange={setDate} /></div>
         <p className="mt-2 text-sm text-ink/70">{date ? persianDate(date) : "تاریخ را انتخاب کنید."}</p>
         <button className="secondary-button mt-3 w-full" type="button" onClick={() => saveChanges("date", { estimatedDeliveryDate: date })} disabled={Boolean(saving) || !date || date === order.estimatedDeliveryDate}>{saving === "date" ? "در حال ذخیره…" : "ذخیره تاریخ"}</button>
@@ -1289,7 +1286,7 @@ function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; onBusyChange: (bu
           <div className="flex items-center gap-3">
             <CalendarDays className="size-5 shrink-0 text-teal" aria-hidden="true" />
             <div className="min-w-0 flex-1">
-              <p className="text-xs font-bold text-ink/70">تاریخ تخمینی تحویل</p>
+              <p className="text-xs font-bold text-ink/70">تاریخ تحویل</p>
               <p className="mt-1 font-black">{persianDate(created.estimatedDeliveryDate)}</p>
             </div>
             {!editingDeliveryDate && (
@@ -1429,7 +1426,7 @@ function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; onBusyChange: (bu
             </label>
 
             <div className="mt-5">
-              <span className="mb-2 block text-sm font-black">تاریخ تخمینی تحویل</span>
+              <span className="mb-2 block text-sm font-black">تاریخ تحویل</span>
               <DeliveryDateSelect
                 id="delivery-date"
                 value={deliveryDate}
@@ -1438,7 +1435,7 @@ function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; onBusyChange: (bu
                 invalid={Boolean(deliveryDateError)}
               />
               <span id="delivery-date-preview" className="mt-2 block text-sm text-ink/70">
-                {deliveryDate ? `تحویل تخمینی: ${persianDate(deliveryDate)}` : "تاریخ وعده‌داده‌شده به مشتری را انتخاب کنید."}
+                {deliveryDate ? `تحویل: ${persianDate(deliveryDate)}` : "تاریخ وعده‌داده‌شده به مشتری را انتخاب کنید."}
               </span>
               {deliveryDateError && <span id="delivery-date-error" className="mt-2 block text-sm font-bold text-error" role="alert">{deliveryDateError}</span>}
             </div>

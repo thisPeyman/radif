@@ -4,7 +4,7 @@ dev:
 	@trap 'kill 0' INT TERM EXIT; $(MAKE) dev-api & $(MAKE) dev-web
 
 dev-api:
-	APP_ORIGIN=$${APP_ORIGIN:-http://192.168.210.213:8080} go run .
+	APP_ORIGIN=$${APP_ORIGIN:-http://192.168.1.121:8080} go run .
 
 dev-web:
 	npm --prefix web run dev

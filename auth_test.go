@@ -97,7 +97,7 @@ func TestSessionLifecycle(t *testing.T) {
 	if body := meResponse.Body.String(); strings.Contains(body, "password") || strings.Contains(body, "session") || !strings.Contains(body, "خانه آبی") {
 		t.Fatalf("unexpected me response: %s", body)
 	}
-	if meResponse.Header().Get(echo.HeaderContentSecurityPolicy) == "" || meResponse.Header().Get(echo.HeaderXContentTypeOptions) != "nosniff" {
+	if csp := meResponse.Header().Get(echo.HeaderContentSecurityPolicy); !strings.Contains(csp, "img-src 'self' data: blob:") || meResponse.Header().Get(echo.HeaderXContentTypeOptions) != "nosniff" {
 		t.Fatal("security headers are missing")
 	}
 

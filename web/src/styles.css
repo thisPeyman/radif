@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "@daypicker/react/style.css";
 
 @theme {
   --color-ink: #183b4e;
@@ -94,6 +95,33 @@ button:disabled {
 .field:focus {
   border-color: #287266;
   box-shadow: 0 0 0 3px rgb(40 114 102 / 12%);
+}
+
+.delivery-calendar .rdp-root {
+  --rdp-accent-color: #287266;
+  --rdp-accent-background-color: rgb(40 114 102 / 12%);
+  --rdp-day-height: 2.25rem;
+  --rdp-day-width: 2.25rem;
+  --rdp-day_button-height: 2.25rem;
+  --rdp-day_button-width: 2.25rem;
+  --rdp-day_button-border-radius: 0.75rem;
+  --rdp-today-color: #287266;
+  width: fit-content;
+  max-width: 100%;
+  margin-inline: auto;
+}
+
+.delivery-calendar .rdp-month_grid {
+  max-width: 100%;
+}
+
+.delivery-calendar .rdp-month_caption {
+  font-weight: 900;
+}
+
+.delivery-calendar .rdp-selected .rdp-day_button {
+  background: #287266;
+  color: #fff;
 }
 
 .primary-button,

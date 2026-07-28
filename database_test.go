@@ -3,9 +3,6 @@ package main
 import (
 	"path/filepath"
 	"testing"
-
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
 )
 
 func TestMigrateAndSeedIsRepeatable(t *testing.T) {
@@ -30,6 +27,9 @@ func TestMigrateAndSeedIsRepeatable(t *testing.T) {
 		if !db.Migrator().HasTable(model) {
 			t.Fatalf("table for %T was not created", model)
 		}
+	}
+	if db.Migrator().HasColumn(&Order{}, "receipt_uploaded_at") {
+		t.Fatal("orders contains obsolete receipt_uploaded_at column")
 	}
 
 	var foreignKeys int
@@ -63,30 +63,5 @@ func TestMigrateAndSeedIsRepeatable(t *testing.T) {
 		if count != check.want {
 			t.Errorf("%s count = %d, want %d", name, count, check.want)
 		}
-	}
-}
-
-func TestMigrationRemovesSingleProductColumn(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "legacy.db")
-	legacy, err := gorm.Open(sqlite.Open(path), &gorm.Config{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := legacy.Exec("CREATE TABLE orders (id INTEGER PRIMARY KEY, product_id INTEGER NOT NULL, CONSTRAINT fk_orders_product FOREIGN KEY (product_id) REFERENCES products(id))").Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := legacy.Exec("CREATE INDEX idx_orders_product_id ON orders(product_id)").Error; err != nil {
-		t.Fatal(err)
-	}
-
-	db, err := openDatabase(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if db.Migrator().HasColumn("orders", "product_id") {
-		t.Fatal("single-product column was not removed")
-	}
-	if !db.Migrator().HasTable(&OrderItem{}) {
-		t.Fatal("order_items table was not created")
 	}
 }

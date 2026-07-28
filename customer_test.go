@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -93,7 +92,7 @@ func TestSubmitCustomerDetailsWithReceipt(t *testing.T) {
 	if err := db.First(&order, order.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if order.CustomerFullName != "سارا احمدی" || order.CustomerMobile != "09123456789" || order.CustomerPostalCode != "1234567890" || order.Status != waitingPaymentStatus || order.CustomerSubmittedAt == nil || order.ReceiptUploadedAt == nil {
+	if order.CustomerFullName != "سارا احمدی" || order.CustomerMobile != "09123456789" || order.CustomerPostalCode != "1234567890" || order.Status != waitingPaymentStatus || order.CustomerSubmittedAt == nil {
 		t.Fatalf("unexpected stored order: %#v", order)
 	}
 	if filepath.Ext(order.ReceiptFilePath) != ".png" || strings.Contains(order.ReceiptFilePath, "claimed") {
@@ -106,15 +105,15 @@ func TestSubmitCustomerDetailsWithReceipt(t *testing.T) {
 	if err := db.Where("order_id = ?", order.ID).Order("id").Find(&history).Error; err != nil || len(history) != 2 || history[1].PreviousStatus != waitingInfoStatus || history[1].NewStatus != waitingPaymentStatus || history[1].ChangedByAdminID != nil {
 		t.Fatalf("unexpected history: %#v, error %v", history, err)
 	}
-	retry := multipartRequest(e, http.MethodPost, "/api/o/"+order.SecretToken+"/details", validCustomerFields(), "", nil)
+	retry := multipartRequest(e, http.MethodPost, "/api/o/"+order.SecretToken+"/details", validCustomerFields(), "receipt.png", png)
 	if retry.Code != http.StatusConflict {
 		t.Fatalf("duplicate submission returned %d: %s", retry.Code, retry.Body.String())
 	}
 }
 
-func TestCustomerValidationAndLaterReceipt(t *testing.T) {
+func TestCustomerSubmissionRequiresReceipt(t *testing.T) {
 	db, e, cfg, _ := newAuthTestServer(t)
-	order := createCustomerTestOrder(t, db, "later-receipt-token")
+	order := createCustomerTestOrder(t, db, "required-receipt-token")
 	invalid := validCustomerFields()
 	invalid["mobile"] = "123"
 	response := multipartRequest(e, http.MethodPost, "/api/o/"+order.SecretToken+"/details", invalid, "", nil)
@@ -122,10 +121,13 @@ func TestCustomerValidationAndLaterReceipt(t *testing.T) {
 		t.Fatalf("invalid mobile returned %d", response.Code)
 	}
 	response = multipartRequest(e, http.MethodPost, "/api/o/"+order.SecretToken+"/details", validCustomerFields(), "", nil)
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"receiptUploadAllowed":true`) {
-		t.Fatalf("details without receipt returned %d: %s", response.Code, response.Body.String())
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "رسید پرداخت") {
+		t.Fatalf("missing receipt returned %d: %s", response.Code, response.Body.String())
 	}
-	response = multipartRequest(e, http.MethodPost, "/api/o/"+order.SecretToken+"/receipt", nil, "receipt.jpg", []byte("not an image"))
+	if err := db.First(&order, order.ID).Error; err != nil || order.CustomerSubmittedAt != nil {
+		t.Fatalf("missing receipt changed order: %#v, error %v", order, err)
+	}
+	response = multipartRequest(e, http.MethodPost, "/api/o/"+order.SecretToken+"/details", validCustomerFields(), "receipt.jpg", []byte("not an image"))
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("spoofed receipt returned %d: %s", response.Code, response.Body.String())
 	}
@@ -136,20 +138,12 @@ func TestCustomerValidationAndLaterReceipt(t *testing.T) {
 	if len(entries) != 0 {
 		t.Fatalf("invalid upload left files: %#v", entries)
 	}
-	jpeg := append([]byte{0xff, 0xd8, 0xff, 0xe0}, bytes.Repeat([]byte{0}, 32)...)
-	response = multipartRequest(e, http.MethodPost, "/api/o/"+order.SecretToken+"/receipt", nil, "receipt.png", jpeg)
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"receiptUploaded":true`) || strings.Contains(response.Body.String(), `"receiptUploadAllowed":true`) {
-		t.Fatalf("later receipt returned %d: %s", response.Code, response.Body.String())
-	}
-	response = multipartRequest(e, http.MethodPost, "/api/o/"+order.SecretToken+"/receipt", nil, "again.jpg", jpeg)
-	if response.Code != http.StatusConflict {
-		t.Fatalf("second receipt returned %d: %s", response.Code, response.Body.String())
-	}
-	if response := multipartRequest(e, http.MethodPost, "/api/o/wrong-token/details", validCustomerFields(), "", nil); response.Code != http.StatusNotFound {
+	png := append([]byte("\x89PNG\r\n\x1a\n"), bytes.Repeat([]byte{0}, 32)...)
+	if response := multipartRequest(e, http.MethodPost, "/api/o/wrong-token/details", validCustomerFields(), "receipt.png", png); response.Code != http.StatusNotFound {
 		t.Fatalf("wrong token returned %d", response.Code)
 	}
-	if response := multipartRequest(e, http.MethodPost, fmt.Sprintf("/api/o/%s/receipt", order.SecretToken), nil, "", nil); response.Code != http.StatusBadRequest {
-		t.Fatalf("missing receipt returned %d", response.Code)
+	if response := multipartRequest(e, http.MethodPost, "/api/o/"+order.SecretToken+"/receipt", nil, "receipt.png", png); response.Code != http.StatusNotFound {
+		t.Fatalf("removed later receipt endpoint returned %d", response.Code)
 	}
 }
 

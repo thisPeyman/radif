@@ -64,7 +64,6 @@ type Order struct {
 	CustomerPostalCode    string
 	CustomerNote          string
 	ReceiptFilePath       string
-	ReceiptUploadedAt     *time.Time
 	Status                string `gorm:"not null;index"`
 	ShipmentTrackingCode  string
 	CustomerSubmittedAt   *time.Time
