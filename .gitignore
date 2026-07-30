@@ -6,6 +6,7 @@
 *.db
 *.db-*
 data/receipts/*
+data/product-images/*
 /deploy/.env
 /deploy/.backup.lock
 /deploy/backups/

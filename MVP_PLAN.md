@@ -21,7 +21,8 @@ The primary success condition is that a repeat order can be created and its link
 ### Included
 
 - Seeded admin accounts
-- Seeded shops, products, product images, and payment instructions
+- Seeded shops and payment instructions
+- Owner-scoped product creation, editing, image upload, archiving, and restoration
 - Admin login and session management
 - Switching between an admin's shops
 - Fast multi-item order creation with quantities and an editable total amount
@@ -42,13 +43,13 @@ The primary success condition is that a repeat order can be created and its link
 - Customer order status page
 - Raw pilot event collection and CSV export
 - Docker deployment to one persistent VPS
-- Database and receipt backup instructions
+- Database and uploaded-media backup instructions
 
 ### Excluded
 
 - Public registration and onboarding
 - Password recovery
-- Shop and product management screens
+- Shop management screens
 - Roles, permissions, and multiple admins per shop
 - Telegram or SMS notifications
 - Instagram integration or automation
@@ -60,7 +61,7 @@ The primary success condition is that a repeat order can be created and its link
 - Courier integrations
 - Desktop-specific tables, sidebars, or layouts
 
-Pilot data changes will be made through the seed command rather than temporary management screens. Add self-service setup only after pilot shops need to change this data frequently.
+Shop data changes remain an operator task. Product data is managed by each shop owner in the application.
 
 ## 3. Product Decisions
 
@@ -81,7 +82,7 @@ Pilot data changes will be made through the seed command rather than temporary m
 
 ## 4. Technical Architecture
 
-Use one deployable application, PostgreSQL, and persistent receipt storage.
+Use one deployable application, PostgreSQL, and persistent uploaded-media storage.
 
 ```text
 Browser
@@ -89,14 +90,14 @@ Browser
    v
 Go application using Echo
 ├── /api/*          JSON API
-├── protected receipt responses
+├── protected receipt and public product-image responses
 └── /*              compiled React application
         |
         ├── GORM → PostgreSQL
-        └── local receipt directory
+        └── local uploaded-media directories
 
 PostgreSQL service → database storage
-Application volume → receipts/
+Application volume → receipts/ and product-images/
 ```
 
 The Vite development server proxies API requests to Go. In production, Echo serves the compiled frontend, so no separate frontend service or API gateway is required.
@@ -132,12 +133,12 @@ Do not add a state manager, query library, form library, UI kit, CSS-in-JS solut
 ### Deployment
 
 - Multi-stage Docker image
-- One application container with a mounted `/data` receipt directory
+- One application container with mounted `/data` uploaded-media directories
 - PostgreSQL on the VPS or a managed PostgreSQL service
 - Existing VPS reverse proxy handles HTTPS
 - Add Caddy only if the VPS has no TLS reverse proxy
 - Environment variables provide cookie settings, origin, session lifetime, upload limits, and seed credentials
-- Daily PostgreSQL backup plus receipt directory backup
+- Daily PostgreSQL backup plus receipt and product-image directory backup
 
 ## 5. Data Model
 
@@ -571,7 +572,7 @@ Acceptance check: a completed test order produces enough exported data to calcul
 - Document environment variables, TLS proxying, seeding, backups, restoration, and upgrades.
 - Perform one restore rehearsal before real pilot orders are accepted.
 
-Acceptance check: the complete core journey passes in production mode and backed-up database and receipt data can be restored.
+Acceptance check: the complete core journey passes in production mode and backed-up database and uploaded media can be restored.
 
 ## 12. Core Journey Test
 

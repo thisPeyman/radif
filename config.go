@@ -15,6 +15,7 @@ type config struct {
 	sessionLifetime time.Duration
 	secureCookies   bool
 	receiptDir      string
+	productImageDir string
 	maxReceiptBytes int64
 }
 
@@ -64,6 +65,7 @@ func loadConfig() (config, error) {
 		sessionLifetime: lifetime,
 		secureCookies:   secureCookies,
 		receiptDir:      filepath.Join(dataDir(), "receipts"),
+		productImageDir: filepath.Join(dataDir(), "product-images"),
 		maxReceiptBytes: maxReceiptBytes,
 	}, nil
 }

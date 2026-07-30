@@ -62,8 +62,8 @@ sudo chown -R "$USER:$(id -gn)" /opt/insta-helper
 cd /opt/insta-helper
 cp .env.example .env
 chmod 600 .env
-mkdir -p data/receipts backups/database backups/receipts
-chmod 700 data backups backups/database backups/receipts
+mkdir -p data/receipts data/product-images backups/database backups/receipts backups/product-images
+chmod 700 data backups backups/database backups/receipts backups/product-images
 ```
 
 Generate the database password and inspect your numeric user IDs:
@@ -220,7 +220,7 @@ systemctl list-timers insta-helper-backup.timer
 The timer runs at 03:00 Iran time and catches a missed run after the VPS starts again. A backup:
 
 - gracefully stops the app while preventing overlapping backup jobs;
-- atomically copies only receipts not already in the append-only backup directory;
+- atomically copies only receipts and product images not already in their append-only backup directories;
 - creates a PostgreSQL custom-format dump and checksum;
 - removes database dumps older than 14 days;
 - restarts the app even when the backup command fails.
@@ -248,12 +248,13 @@ sha256sum -c 20260729T193000Z-nightly.dump.sha256
 
 ## Download backups
 
-Database dumps expire after 14 days. Receipts are cumulative, so use `rsync` to transfer only files not already downloaded:
+Database dumps expire after 14 days. Uploaded media is cumulative, so use `rsync` to transfer only files not already downloaded:
 
 ```sh
-mkdir -p backups/database backups/receipts
+mkdir -p backups/database backups/receipts backups/product-images
 scp "$SERVER_USER@$SERVER:/opt/insta-helper/backups/database/20260729T193000Z-nightly.dump*" backups/database/
 rsync -av "$SERVER_USER@$SERVER:/opt/insta-helper/backups/receipts/" backups/receipts/
+rsync -av "$SERVER_USER@$SERVER:/opt/insta-helper/backups/product-images/" backups/product-images/
 cd backups/database
 sha256sum -c 20260729T193000Z-nightly.dump.sha256
 ```
@@ -262,7 +263,7 @@ These local copies are the only protection against complete VPS loss. The curren
 
 ## Restore from a backup
 
-This procedure replaces the entire production database and live receipt directory. It has not been validated by a restore drill. Take a fresh backup first if the current state may still be useful.
+This procedure replaces the entire production database and live uploaded-media directories. It has not been validated by a restore drill. Take a fresh backup first if the current state may still be useful.
 
 Choose and verify the dump:
 
@@ -284,19 +285,22 @@ sudo docker compose exec -T db pg_restore \
   < backups/database/20260729T193000Z-nightly.dump
 ```
 
-Replace receipts while keeping the previous directory temporarily:
+Replace uploaded media while keeping the previous directories temporarily:
 
 ```sh
 mv data/receipts "data/receipts.before-$(date -u +%Y%m%dT%H%M%SZ)"
 mkdir data/receipts
 cp -a backups/receipts/. data/receipts/
-chown -R "$(id -u):$(id -g)" data/receipts
-chmod 700 data/receipts
+mv data/product-images "data/product-images.before-$(date -u +%Y%m%dT%H%M%SZ)"
+mkdir data/product-images
+cp -a backups/product-images/. data/product-images/
+chown -R "$(id -u):$(id -g)" data/receipts data/product-images
+chmod 700 data/receipts data/product-images
 sudo docker compose start app
 curl --fail https://app.example.com/api/health
 ```
 
-The cumulative receipt backup may contain files newer than the selected database dump. They are harmless because no database row references them.
+The cumulative media backups may contain files newer than the selected database dump. They are harmless because no database row references them.
 
 ## DBeaver through SSH
 
@@ -312,52 +316,33 @@ ssh -N -L 5434:127.0.0.1:5432 "$SERVER_USER@$SERVER"
 
 Then connect DBeaver to local host `127.0.0.1`, port `5434`, database `insta_helper`.
 
-## Edit the catalog
+## Create a shop
 
-Run a manual backup before every catalog edit:
+Products are created, edited, archived, and restored by the shop owner from the «محصول‌ها» section. Uploaded product images are stored in `data/product-images` and included in the nightly media backup.
 
-```sh
-sudo /opt/insta-helper/backup before-catalog-edit
-```
-
-Use transactions in DBeaver and verify affected rows before committing. This example creates one shop and two products for an existing admin:
+Shop management is still manual. Run a backup first, then use a transaction in DBeaver and verify the affected row before committing:
 
 ```sql
 BEGIN;
 
-WITH new_shop AS (
-    INSERT INTO shops (
-        owner_admin_id, name, logo_path, short_description,
-        payment_card_number, payment_instructions, active,
-        created_at, updated_at
-    )
-    SELECT
-        id, 'Shop name', '/images/shop.svg', 'Description',
-        '6037990000000000', 'Card holder and payment instructions', true,
-        now(), now()
-    FROM admins
-    WHERE login = 'admin'
-    RETURNING id
+INSERT INTO shops (
+    owner_admin_id, name, logo_path, short_description,
+    payment_card_number, payment_instructions, active,
+    created_at, updated_at
 )
-INSERT INTO products (
-    shop_id, name, main_image_path, default_price,
-    short_description, active, created_at, updated_at
-)
-SELECT new_shop.id, product.name, product.image, product.price,
-       product.description, true, now(), now()
-FROM new_shop
-CROSS JOIN (VALUES
-    ('Product one', '/images/product-one.webp', 420000::bigint, 'Description one'),
-    ('Product two', '/images/product-two.webp', 680000::bigint, 'Description two')
-) AS product(name, image, price, description);
+SELECT
+    id, 'Shop name', '/images/shop.svg', 'Description',
+    '6037990000000000', 'Card holder and payment instructions', true,
+    now(), now()
+FROM admins
+WHERE login = 'admin';
 
 SELECT id, name, owner_admin_id FROM shops ORDER BY id DESC;
-SELECT id, shop_id, name, default_price FROM products ORDER BY id DESC;
 
 COMMIT;
 ```
 
-Every `logo_path` and `main_image_path` must exist under `web/public/images` in the locally built app image. Add or replace catalog images locally, build a new release, deploy it, and then update the database path. Catalog media is not stored in or backed up with the receipt directory.
+Every manually assigned `logo_path` must exist under `web/public/images` in the locally built app image. Product images uploaded through the application do not require a rebuild or deployment.
 
 ## Weekly checklist
 

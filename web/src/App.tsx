@@ -1,5 +1,7 @@
 import {
+  Archive,
   ArrowLeft,
+  ArrowRight,
   Check,
   CalendarDays,
   ChevronDown,
@@ -8,10 +10,12 @@ import {
   ClipboardList,
   Eye,
   EyeOff,
+  ImagePlus,
   LoaderCircle,
   LogOut,
   MessageCircle,
   Package,
+  Pencil,
   Plus,
   RotateCcw,
   Store,
@@ -19,8 +23,10 @@ import {
   Truck,
   Upload,
   UserRound,
+  ZoomIn,
 } from "lucide-react";
 import { DayPicker } from "@daypicker/persian";
+import Cropper, { type Area } from "react-easy-crop";
 import { useDeferredValue, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
   Navigate,
@@ -51,6 +57,7 @@ type Product = {
   imagePath: string;
   defaultPrice: number;
   shortDescription?: string;
+  active: boolean;
 };
 
 type SelectedItem = {
@@ -640,6 +647,7 @@ function ShopSwitcher({ shops, selected, onChange, disabled }: { shops: Shop[]; 
 const navigation = [
   { to: "/orders", label: "سفارش‌ها", icon: ClipboardList },
   { to: "/orders/new", label: "سفارش جدید", icon: Plus },
+  { to: "/products", label: "محصول‌ها", icon: Package },
   { to: "/account", label: "حساب", icon: UserRound },
 ];
 
@@ -653,7 +661,7 @@ function BottomNavigation({ disabled }: { disabled: boolean }) {
           className={({ isActive }) => `nav-item ${isActive ? "nav-item-active" : ""} ${disabled ? "pointer-events-none opacity-45" : ""}`}
           aria-disabled={disabled}
           onClick={(event) => { if (disabled) event.preventDefault(); }}
-          end
+          end={to !== "/products"}
         >
           <Icon className="size-5" strokeWidth={2} aria-hidden="true" />
           <span>{label}</span>
@@ -807,6 +815,296 @@ function ProductImage({ product }: { product: Product }) {
         onError={(event) => { event.currentTarget.style.display = "none"; }}
       />
     </span>
+  );
+}
+
+function loadImage(source: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = reject;
+    image.src = source;
+  });
+}
+
+async function cropProductImage(source: string, area: Area) {
+  const image = await loadImage(source);
+  const canvas = document.createElement("canvas");
+  canvas.width = 1200;
+  canvas.height = 1200;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("تصویر برش نخورد.");
+  context.drawImage(image, area.x, area.y, area.width, area.height, 0, 0, 1200, 1200);
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", 0.86));
+  if (!blob) throw new Error("مرورگر نتوانست تصویر WebP بسازد.");
+  return new File([blob], "product.webp", { type: "image/webp" });
+}
+
+function ProductImageEditor({ existing, file, onChange, onCroppingChange }: { existing?: string; file: File | null; onChange: (file: File | null) => void; onCroppingChange: (cropping: boolean) => void }) {
+  const input = useRef<HTMLInputElement>(null);
+  const [source, setSource] = useState("");
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [area, setArea] = useState<Area | null>(null);
+  const [working, setWorking] = useState(false);
+  const [error, setError] = useState("");
+  const [preview, setPreview] = useState("");
+
+  useEffect(() => {
+    if (!file) {
+      setPreview("");
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+
+  useEffect(() => () => { if (source) URL.revokeObjectURL(source); }, [source]);
+  useEffect(() => {
+    onCroppingChange(Boolean(source));
+    return () => onCroppingChange(false);
+  }, [onCroppingChange, source]);
+
+  function choose(selected?: File) {
+    if (!selected) return;
+    if (!["image/jpeg", "image/png", "image/webp"].includes(selected.type)) {
+      setError("تصویر باید JPEG، PNG یا WebP باشد.");
+      return;
+    }
+    if (source) URL.revokeObjectURL(source);
+    setSource(URL.createObjectURL(selected));
+    setCrop({ x: 0, y: 0 });
+    setZoom(1);
+    setArea(null);
+    setError("");
+  }
+
+  async function finishCrop() {
+    if (!source || !area) return;
+    setWorking(true);
+    setError("");
+    try {
+      onChange(await cropProductImage(source, area));
+      URL.revokeObjectURL(source);
+      setSource("");
+      if (input.current) input.current.value = "";
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "تصویر برش نخورد.");
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  function cancelCrop() {
+    URL.revokeObjectURL(source);
+    setSource("");
+    if (input.current) input.current.value = "";
+  }
+
+  return (
+    <div>
+      <input ref={input} className="hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => choose(event.target.files?.[0])} />
+      {source ? (
+        <div className="product-crop-shell">
+          <div className="product-crop-stage" dir="ltr">
+            <Cropper image={source} crop={crop} zoom={zoom} aspect={1} cropShape="rect" showGrid onCropChange={setCrop} onZoomChange={setZoom} onCropComplete={(_, pixels) => setArea(pixels)} />
+          </div>
+          <label className="mt-4 flex items-center gap-3 text-sm font-black">
+            <ZoomIn className="size-5 shrink-0 text-teal" aria-hidden="true" />
+            <span className="sr-only">بزرگ‌نمایی تصویر</span>
+            <input className="product-zoom" type="range" min="1" max="3" step="0.01" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} />
+          </label>
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <button className="secondary-button" type="button" disabled={working} onClick={cancelCrop}>انصراف</button>
+            <button className="primary-button" type="button" disabled={working || !area} onClick={finishCrop}>{working ? <LoaderCircle className="size-5 animate-spin" /> : <Check className="size-5" />}{working ? "در حال آماده‌سازی…" : "ثبت برش"}</button>
+          </div>
+        </div>
+      ) : (preview || existing) ? (
+        <div className="product-image-preview">
+          <img src={preview || existing} alt="پیش‌نمایش تصویر محصول" />
+          <div className="p-3">
+            <button className="secondary-button w-full" type="button" onClick={() => input.current?.click()}><ImagePlus className="size-5" />تغییر و برش تصویر</button>
+            {file && existing && <button className="mt-3 w-full text-sm font-black text-ink/65" type="button" onClick={() => onChange(null)}>بازگشت به تصویر فعلی</button>}
+          </div>
+        </div>
+      ) : (
+        <button className="product-image-empty" type="button" onClick={() => input.current?.click()}>
+          <span className="grid size-12 place-items-center rounded-2xl bg-teal text-white"><ImagePlus className="size-6" /></span>
+          <span><strong className="block">انتخاب و برش تصویر</strong><small className="mt-1 block text-ink/65">خروجی مربع و مناسب نمایش محصول است</small></span>
+        </button>
+      )}
+      {error && <p className="mt-2 text-sm font-bold text-error" role="alert">{error}</p>}
+    </div>
+  );
+}
+
+function sortProducts(products: Product[]) {
+  return [...products].sort((a, b) => Number(b.active) - Number(a.active) || b.id - a.id);
+}
+
+function ProductsPage({ shop }: { shop: Shop }) {
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [changing, setChanging] = useState<number>();
+
+  function loadProducts() {
+    setLoading(true);
+    setError("");
+    api<{ products: Product[] }>(`/api/shops/${shop.id}/products?includeInactive=true`)
+      .then((response) => setProducts(response.products))
+      .catch((reason) => setError(reason instanceof Error ? reason.message : "محصول‌ها دریافت نشدند."))
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(loadProducts, [shop.id]);
+
+  async function changeActive(product: Product) {
+    setChanging(product.id);
+    setError("");
+    try {
+      if (product.active) {
+        await api<void>(`/api/shops/${shop.id}/products/${product.id}`, { method: "DELETE" });
+      } else {
+        await api<Product>(`/api/shops/${shop.id}/products/${product.id}/activate`, { method: "POST" });
+      }
+      setProducts((current) => sortProducts(current.map((item) => item.id === product.id ? { ...item, active: !product.active } : item)));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "وضعیت محصول تغییر نکرد.");
+    } finally {
+      setChanging(undefined);
+    }
+  }
+
+  const activeCount = products.filter((product) => product.active).length;
+  return (
+    <section className="page-content">
+      <div className="flex items-end justify-between gap-4">
+        <div>
+          <p className="page-kicker">{shop.name}</p>
+          <h1 className="page-title">محصول‌ها</h1>
+          {!loading && <p className="mt-2 text-sm font-bold text-ink/65">{persianNumber(activeCount)} فعال از {persianNumber(products.length)} محصول</p>}
+        </div>
+        <NavLink className="grid size-12 shrink-0 place-items-center rounded-2xl bg-saffron text-ink shadow-sm" to="/products/new" aria-label="محصول جدید"><Plus className="size-6" strokeWidth={2.5} /></NavLink>
+      </div>
+
+      {loading && <div className="mt-8 grid min-h-48 place-items-center"><LoaderCircle className="size-7 animate-spin text-teal" aria-label="در حال دریافت محصول‌ها" /></div>}
+      {error && <div className="mt-6"><ErrorNotice retry={loadProducts}>{error}</ErrorNotice></div>}
+      {!loading && !error && products.length === 0 && (
+        <div className="mt-8 rounded-3xl border border-ledger bg-white p-7 text-center">
+          <Package className="mx-auto size-9 text-teal" />
+          <h2 className="mt-4 text-lg font-black">اولین محصول را بسازید</h2>
+          <p className="mt-2 text-sm leading-7 text-ink/65">نام، قیمت و تصویر را یک‌بار ثبت کنید تا ساخت سفارش سریع‌تر شود.</p>
+          <NavLink className="primary-button mt-6 w-full" to="/products/new"><Plus className="size-5" />ساخت محصول</NavLink>
+        </div>
+      )}
+      <div className="mt-7 space-y-3" aria-live="polite">
+        {products.map((product, index) => (
+          <div key={product.id}>
+            {!product.active && (index === 0 || products[index - 1].active) && <p className="archive-divider">بایگانی‌شده‌ها</p>}
+            <div className={`manage-product-card ${product.active ? "" : "manage-product-card-archived"}`}>
+              <div className="flex items-center gap-3 p-3">
+                <ProductImage product={product} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2"><h2 className="truncate font-black">{product.name}</h2>{product.active && <span className="size-2 shrink-0 rounded-full bg-teal" aria-label="فعال" />}</div>
+                  {product.shortDescription && <p className="mt-1 truncate text-xs text-ink/60">{product.shortDescription}</p>}
+                  <p className="mt-2 text-sm font-black text-teal">{persianNumber(product.defaultPrice)} تومان</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 border-t border-ledger/80">
+                <NavLink className="manage-product-action border-l border-ledger/80" to={`/products/${product.id}/edit`}><Pencil className="size-4" />ویرایش</NavLink>
+                <button className={`manage-product-action ${product.active ? "text-error" : "text-teal"}`} type="button" disabled={changing === product.id} onClick={() => changeActive(product)}>
+                  {changing === product.id ? <LoaderCircle className="size-4 animate-spin" /> : product.active ? <Archive className="size-4" /> : <RotateCcw className="size-4" />}
+                  {product.active ? "بایگانی" : "فعال‌سازی دوباره"}
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ProductFormPage({ shop, mode }: { shop: Shop; mode: "create" | "edit" }) {
+  const { productID } = useParams();
+  const navigate = useNavigate();
+  const [product, setProduct] = useState<Product>();
+  const [name, setName] = useState("");
+  const [price, setPrice] = useState("");
+  const [description, setDescription] = useState("");
+  const [image, setImage] = useState<File | null>(null);
+  const [loading, setLoading] = useState(mode === "edit");
+  const [pending, setPending] = useState(false);
+  const [cropping, setCropping] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (mode !== "edit") return;
+    const controller = new AbortController();
+    setLoading(true);
+    api<{ products: Product[] }>(`/api/shops/${shop.id}/products?includeInactive=true`, { signal: controller.signal })
+      .then((response) => {
+        const found = response.products.find((item) => item.id === Number(productID));
+        if (!found) throw new ApiError(404, "محصول پیدا نشد.");
+        setProduct(found);
+        setName(found.name);
+        setPrice(String(found.defaultPrice));
+        setDescription(found.shortDescription ?? "");
+      })
+      .catch((reason) => { if (!(reason instanceof DOMException && reason.name === "AbortError")) setError(reason instanceof Error ? reason.message : "محصول دریافت نشد."); })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [mode, productID, shop.id]);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (cropping) {
+      setError("برش تصویر را ثبت یا لغو کنید.");
+      return;
+    }
+    const numericPrice = Number(price);
+    if (!name.trim() || !Number.isSafeInteger(numericPrice) || numericPrice <= 0 || (mode === "create" && !image)) {
+      setError("نام، قیمت صحیح و تصویر محصول را کامل کنید.");
+      return;
+    }
+    const form = new FormData();
+    form.set("name", name.trim());
+    form.set("defaultPrice", String(numericPrice));
+    form.set("shortDescription", description.trim());
+    if (image) form.set("image", image);
+    setPending(true);
+    setError("");
+    try {
+      const path = mode === "create" ? `/api/shops/${shop.id}/products` : `/api/shops/${shop.id}/products/${productID}`;
+      await api<Product>(path, { method: mode === "create" ? "POST" : "PATCH", body: form });
+      navigate("/products", { replace: true });
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "محصول ذخیره نشد.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  if (loading) return <div className="page-content grid min-h-72 place-items-center"><LoaderCircle className="size-7 animate-spin text-teal" aria-label="در حال دریافت محصول" /></div>;
+  if (mode === "edit" && !product) return <section className="page-content"><NavLink className="mb-5 inline-flex min-h-11 items-center gap-2 font-black text-teal" to="/products"><ArrowRight className="size-5" />بازگشت به محصول‌ها</NavLink><ErrorNotice>{error || "محصول پیدا نشد."}</ErrorNotice></section>;
+  return (
+    <form className="page-content" onSubmit={submit}>
+      <NavLink className="mb-5 inline-flex min-h-11 items-center gap-2 font-black text-teal" to="/products"><ArrowRight className="size-5" />بازگشت به محصول‌ها</NavLink>
+      <p className="page-kicker">{shop.name}</p>
+      <h1 className="page-title">{mode === "create" ? "محصول تازه" : "ویرایش محصول"}</h1>
+      <p className="mt-2 text-sm leading-7 text-ink/65">تصویر مربع در سفارش مدیر و صفحه مشتری نمایش داده می‌شود.</p>
+
+      <div className="mt-7"><ProductImageEditor existing={product?.imagePath} file={image} onChange={setImage} onCroppingChange={setCropping} /></div>
+      <div className="mt-7 space-y-5">
+        <label className="block" htmlFor="product-name"><span className="mb-2 block text-sm font-black">نام محصول</span><input id="product-name" className="field" value={name} maxLength={150} required onChange={(event) => setName(event.target.value)} placeholder="مثلاً شمع موج" /></label>
+        <label className="block" htmlFor="product-price"><span className="mb-2 block text-sm font-black">قیمت پیش‌فرض</span><span className="relative block"><input id="product-price" className="field pl-20 text-lg font-black" inputMode="numeric" value={price.replace(/\d/g, (digit) => persianDigits[Number(digit)])} required onChange={(event) => setPrice(normalizeDigits(event.target.value))} /><span className="pointer-events-none absolute inset-y-0 left-4 flex items-center text-sm font-bold text-ink/60">تومان</span></span></label>
+        <label className="block" htmlFor="product-description"><span className="mb-2 block text-sm font-black">توضیح کوتاه <span className="font-medium text-ink/50">(اختیاری)</span></span><textarea id="product-description" className="field min-h-28 resize-y py-3" value={description} maxLength={1000} onChange={(event) => setDescription(event.target.value)} placeholder="نکته‌ای که موقع انتخاب محصول کمک می‌کند" /></label>
+      </div>
+      {error && <div className="mt-5"><ErrorNotice>{error}</ErrorNotice></div>}
+      <button className="primary-button mt-7 w-full" type="submit" disabled={pending || cropping || !name.trim() || !price || (mode === "create" && !image)}>{pending ? <LoaderCircle className="size-5 animate-spin" /> : <Check className="size-5" />}{pending ? "در حال ذخیره…" : mode === "create" ? "ساخت محصول" : "ذخیره تغییرات"}</button>
+    </form>
   );
 }
 
@@ -1685,6 +1983,7 @@ function AdminApp({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const [shopID, setShopID] = useState(me.shops.some((shop) => shop.id === savedID) ? savedID : me.shops[0]?.id);
   const [creating, setCreating] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
 
   if (!me.shops.length) {
     return (
@@ -1703,7 +2002,7 @@ function AdminApp({ me, onLogout }: { me: Me; onLogout: () => void }) {
   function changeShop(id: number) {
     setShopID(id);
     localStorage.setItem("radif_shop_id", String(id));
-    navigate("/orders");
+    navigate(location.pathname.startsWith("/products") ? "/products" : "/orders");
   }
   async function logout() {
     await api<void>("/api/session", { method: "DELETE" });
@@ -1719,6 +2018,9 @@ function AdminApp({ me, onLogout }: { me: Me; onLogout: () => void }) {
           <Route path="/orders" element={<OrdersPage shop={selected} />} />
           <Route path="/orders/new" element={<CreateOrderPage key={selected.id} shop={selected} onBusyChange={setCreating} />} />
           <Route path="/orders/:orderID" element={<AdminOrderPage />} />
+          <Route path="/products" element={<ProductsPage key={selected.id} shop={selected} />} />
+          <Route path="/products/new" element={<ProductFormPage key={selected.id} shop={selected} mode="create" />} />
+          <Route path="/products/:productID/edit" element={<ProductFormPage key={`${selected.id}-${location.pathname}`} shop={selected} mode="edit" />} />
           <Route path="/account" element={<AccountPage me={me} onLogout={logout} />} />
           <Route path="*" element={<Navigate to="/orders/new" replace />} />
         </Routes>

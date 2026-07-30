@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "@daypicker/react/style.css";
+@import "react-easy-crop/react-easy-crop.css";
 
 @theme {
   --color-ink: #183b4e;
@@ -780,7 +781,7 @@ button:disabled {
   left: 50%;
   display: grid;
   width: min(100%, 480px);
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   transform: translateX(-50%);
   border-top: 1px solid #cfdddf;
   background: rgb(247 249 248 / 96%);
@@ -868,6 +869,95 @@ button:disabled {
   gap: 0.875rem;
   padding: 0.75rem 1rem 0.75rem 0.75rem;
   color: #183b4e;
+}
+
+.manage-product-card {
+  overflow: hidden;
+  border: 1px solid #d2dfe1;
+  border-radius: 1.5rem;
+  background: #fff;
+  box-shadow: 0 6px 22px rgb(24 59 78 / 5%);
+}
+
+.manage-product-card-archived {
+  background: rgb(228 238 240 / 45%);
+  filter: saturate(0.55);
+}
+
+.manage-product-card-archived img {
+  opacity: 0.62;
+}
+
+.manage-product-action {
+  display: inline-flex;
+  min-height: 3rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  font-size: 0.8rem;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.manage-product-action:disabled {
+  opacity: 0.45;
+}
+
+.archive-divider {
+  margin: 1.75rem 0 0.75rem;
+  color: rgb(24 59 78 / 62%);
+  font-size: 0.75rem;
+  font-weight: 900;
+}
+
+.product-image-empty {
+  display: flex;
+  min-height: 7rem;
+  width: 100%;
+  align-items: center;
+  gap: 1rem;
+  border: 2px dashed #b9ced1;
+  border-radius: 1.5rem;
+  background: rgb(228 238 240 / 38%);
+  padding: 1.25rem;
+  text-align: right;
+}
+
+.product-image-preview,
+.product-crop-shell {
+  overflow: hidden;
+  border: 1px solid #cbdadd;
+  border-radius: 1.5rem;
+  background: #fff;
+}
+
+.product-image-preview img {
+  aspect-ratio: 1;
+  width: 100%;
+  background: #e4eef0;
+  object-fit: cover;
+}
+
+.product-crop-shell {
+  padding: 0.75rem;
+}
+
+.product-crop-stage {
+  position: relative;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: 1rem;
+  background: #183b4e;
+}
+
+.product-crop-stage .reactEasyCrop_CropArea {
+  border: 2px solid #e9a928;
+  color: rgb(24 59 78 / 58%);
+}
+
+.product-zoom {
+  width: 100%;
+  accent-color: #287266;
 }
 
 .quantity-button {

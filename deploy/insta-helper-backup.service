@@ -1,5 +1,5 @@
 [Unit]
-Description=Insta Helper database and receipt backup
+Description=Insta Helper database and uploaded media backup
 Requires=docker.service
 After=docker.service
 ConditionPathExists=/opt/insta-helper/.env

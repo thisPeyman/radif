@@ -2,10 +2,8 @@ package main
 
 import (
 	"errors"
-	"io"
 	"mime/multipart"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -21,12 +19,6 @@ type customerDetails struct {
 	address    string
 	postalCode string
 	note       string
-}
-
-type pendingReceipt struct {
-	temporaryPath string
-	finalPath     string
-	storedName    string
 }
 
 func normalizeDigits(value string) string {
@@ -99,7 +91,35 @@ func validateCustomerDetails(details customerDetails) error {
 	return nil
 }
 
-func prepareReceipt(cfg config, fileHeader *multipart.FileHeader) (*pendingReceipt, error) {
+func echoImageTooLarge(label string) error {
+	if label == "receipt" {
+		return echo.NewHTTPError(http.StatusRequestEntityTooLarge, "حجم رسید بیش از حد مجاز است.")
+	}
+	return echo.NewHTTPError(http.StatusRequestEntityTooLarge, "حجم تصویر محصول بیش از حد مجاز است.")
+}
+
+func echoInvalidImage(label string) error {
+	if label == "receipt" {
+		return echo.NewHTTPError(http.StatusBadRequest, "رسید باید تصویر JPEG، PNG یا WebP باشد.")
+	}
+	return echo.NewHTTPError(http.StatusBadRequest, "تصویر محصول باید JPEG، PNG یا WebP باشد.")
+}
+
+func echoImageUnreadable(label string) error {
+	if label == "receipt" {
+		return echo.NewHTTPError(http.StatusBadRequest, "تصویر رسید خوانده نشد.")
+	}
+	return echo.NewHTTPError(http.StatusBadRequest, "تصویر محصول خوانده نشد.")
+}
+
+func echoImageEmpty(label string) error {
+	if label == "receipt" {
+		return echo.NewHTTPError(http.StatusBadRequest, "تصویر رسید خالی است.")
+	}
+	return echo.NewHTTPError(http.StatusBadRequest, "تصویر محصول خالی است.")
+}
+
+func prepareReceipt(cfg config, fileHeader *multipart.FileHeader) (*pendingImage, error) {
 	maxBytes := cfg.maxReceiptBytes
 	if maxBytes <= 0 {
 		maxBytes = 5 << 20
@@ -108,79 +128,7 @@ func prepareReceipt(cfg config, fileHeader *multipart.FileHeader) (*pendingRecei
 	if dir == "" {
 		dir = filepath.Join(dataDir(), "receipts")
 	}
-	if err := os.MkdirAll(dir, 0o750); err != nil {
-		return nil, err
-	}
-	source, err := fileHeader.Open()
-	if err != nil {
-		return nil, echo.NewHTTPError(http.StatusBadRequest, "تصویر رسید خوانده نشد.")
-	}
-	defer source.Close()
-	temporary, err := os.CreateTemp(dir, ".upload-*")
-	if err != nil {
-		return nil, err
-	}
-	temporaryPath := temporary.Name()
-	cleanup := func() {
-		_ = temporary.Close()
-		_ = os.Remove(temporaryPath)
-	}
-	written, copyErr := io.Copy(temporary, io.LimitReader(source, maxBytes+1))
-	if closeErr := temporary.Close(); copyErr == nil {
-		copyErr = closeErr
-	}
-	if copyErr != nil {
-		cleanup()
-		return nil, copyErr
-	}
-	if written == 0 {
-		cleanup()
-		return nil, echo.NewHTTPError(http.StatusBadRequest, "تصویر رسید خالی است.")
-	}
-	if written > maxBytes {
-		cleanup()
-		return nil, echo.NewHTTPError(http.StatusRequestEntityTooLarge, "حجم رسید بیش از حد مجاز است.")
-	}
-	file, err := os.Open(temporaryPath)
-	if err != nil {
-		cleanup()
-		return nil, err
-	}
-	header := make([]byte, 512)
-	read, readErr := file.Read(header)
-	_ = file.Close()
-	if readErr != nil && !errors.Is(readErr, io.EOF) {
-		cleanup()
-		return nil, readErr
-	}
-	extensions := map[string]string{"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
-	extension, ok := extensions[http.DetectContentType(header[:read])]
-	if !ok {
-		cleanup()
-		return nil, echo.NewHTTPError(http.StatusBadRequest, "رسید باید تصویر JPEG، PNG یا WebP باشد.")
-	}
-	token, err := newOpaqueToken()
-	if err != nil {
-		cleanup()
-		return nil, err
-	}
-	storedName := token + extension
-	return &pendingReceipt{temporaryPath: temporaryPath, finalPath: filepath.Join(dir, storedName), storedName: storedName}, nil
-}
-
-func (receipt *pendingReceipt) discard() {
-	if receipt == nil {
-		return
-	}
-	_ = os.Remove(receipt.temporaryPath)
-	_ = os.Remove(receipt.finalPath)
-}
-
-func (receipt *pendingReceipt) commit() error {
-	if receipt == nil {
-		return nil
-	}
-	return os.Rename(receipt.temporaryPath, receipt.finalPath)
+	return prepareImage(dir, maxBytes, fileHeader, "receipt")
 }
 
 func submitCustomerDetails(db *gorm.DB, cfg config) echo.HandlerFunc {

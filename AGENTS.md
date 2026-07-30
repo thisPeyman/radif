@@ -18,9 +18,9 @@
 
 ## Data And Configuration
 
-- `DATABASE_URL` selects PostgreSQL and defaults to the Compose service exposed at `localhost:5433`. `DATA_DIR` defaults to `data` and stores receipts at `$DATA_DIR/receipts`.
+- `DATABASE_URL` selects PostgreSQL and defaults to the Compose service exposed at `localhost:5433`. `DATA_DIR` defaults to `data` and stores receipts at `$DATA_DIR/receipts` and public product images at `$DATA_DIR/product-images`.
 - Runtime variables are `DATABASE_URL`, `APP_ORIGIN`, `SESSION_LIFETIME` (positive Go duration, default `720h`), `COOKIE_SECURE` (set `true` behind HTTPS), and `MAX_RECEIPT_BYTES` (positive bytes, default 5 MiB).
-- Treat PostgreSQL backups and the receipt directory as one operational data set.
+- Treat PostgreSQL backups, receipts, and product images as one operational data set.
 
 ## Constraints To Preserve
 

@@ -12,19 +12,23 @@ esac
 umask 077
 timestamp=$(date -u +%Y%m%dT%H%M%SZ)
 database_dir=/backups/database
-receipt_dir=/backups/receipts
-mkdir -p "$database_dir" "$receipt_dir"
+mkdir -p "$database_dir"
 
-rm -f "$receipt_dir"/.*.tmp.*
-for source in /data/receipts/*; do
-	[ -f "$source" ] || continue
-	name=${source##*/}
-	target="$receipt_dir/$name"
-	if [ ! -e "$target" ]; then
-		temporary="$receipt_dir/.$name.tmp.$$"
-		cp -p "$source" "$temporary"
-		mv "$temporary" "$target"
-	fi
+for media in receipts product-images; do
+	source_dir="/data/$media"
+	target_dir="/backups/$media"
+	mkdir -p "$target_dir"
+	rm -f "$target_dir"/.*.tmp.*
+	for source in "$source_dir"/*; do
+		[ -f "$source" ] || continue
+		name=${source##*/}
+		target="$target_dir/$name"
+		if [ ! -e "$target" ]; then
+			temporary="$target_dir/.$name.tmp.$$"
+			cp -p "$source" "$temporary"
+			mv "$temporary" "$target"
+		fi
+	done
 done
 
 dump="$timestamp-$kind.dump"
