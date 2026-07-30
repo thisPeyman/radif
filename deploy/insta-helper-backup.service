@@ -1,0 +1,11 @@
+[Unit]
+Description=Insta Helper database and receipt backup
+Requires=docker.service
+After=docker.service
+ConditionPathExists=/opt/insta-helper/.env
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/insta-helper
+ExecStart=/opt/insta-helper/backup nightly
+TimeoutStartSec=30min

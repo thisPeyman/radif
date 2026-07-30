@@ -2,7 +2,7 @@
 
 ## Layout
 
-- The backend is one root Go module/package (`package main`); `main.go` migrates PostgreSQL, handles the `seed` subcommand, and starts Echo on `:8080`.
+- The backend is one root Go module/package (`package main`); `main.go` applies embedded Goose migrations, handles the admin-only `seed` subcommand, and starts Echo on `:8080`.
 - `web/` is a separate npm package. Run npm commands with `npm --prefix web`; the frontend entry path is `web/index.html` -> `web/src/main.tsx` -> `web/src/App.tsx`.
 - Production is one Go process serving `/api/*` and SPA files from the relative path `web/dist`. Run the binary from the repository root.
 
@@ -10,8 +10,8 @@
 
 - Toolchain: Go 1.26, Node.js 24, npm, Docker, and Docker Compose.
 - Install locked frontend dependencies without changing them: `npm --prefix web ci`.
-- Start local development: `APP_ORIGIN=http://localhost:5173 make dev`. Do not rely on the current Makefile default (`http://192.168.1.121:8080`); protected mutations require an exact `Origin` match and Vite runs at `http://localhost:5173`.
-- Seed/update demo data: `SEED_ADMIN_LOGIN=admin SEED_ADMIN_PASSWORD='replace-me' make seed`. `SEED_ADMIN_NAME` is optional; `make dev` does not seed.
+- Start local development: `make dev`. The Makefile defaults `APP_ORIGIN` to `http://localhost:5173`; protected mutations require that exact origin while Vite is running there.
+- Seed/update the admin account: `SEED_ADMIN_LOGIN=admin SEED_ADMIN_PASSWORD='replace-me' make seed`. `SEED_ADMIN_NAME` is optional; shops and products are not seeded.
 - Run all checks in repository order: `make check` (`go test ./...`, frontend typecheck, then frontend production build).
 - Focus a Go test after `make db-up`: `go test ./... -run '^TestName$'`. Tests use isolated temporary PostgreSQL schemas; override their connection with `TEST_DATABASE_URL`.
 - Build and run production-style: `make run`. There are no configured frontend test, lint, formatter, or codegen commands.

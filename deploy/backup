@@ -1,0 +1,27 @@
+#!/bin/sh
+set -eu
+
+project_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+cd "$project_dir"
+
+exec 9>"$project_dir/.backup.lock"
+if ! flock -n 9; then
+	echo "another backup is already running" >&2
+	exit 1
+fi
+
+app_was_running=false
+if [ -n "$(docker compose ps --status running -q app)" ]; then
+	app_was_running=true
+	docker compose stop -t 15 app
+fi
+
+restart_app() {
+	trap - EXIT HUP INT TERM
+	if [ "$app_was_running" = true ]; then
+		docker compose start app
+	fi
+}
+trap restart_app EXIT HUP INT TERM
+
+docker compose --profile ops run --rm backup "${1:-manual}"

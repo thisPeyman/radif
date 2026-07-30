@@ -1,11 +1,15 @@
 package main
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/labstack/echo/v4"
@@ -14,32 +18,70 @@ import (
 )
 
 func main() {
-	db, err := openDatabase(databaseURL())
-	if err != nil {
+	if err := run(); err != nil {
 		log.Fatal(err)
 	}
-
-	if len(os.Args) > 1 {
-		if os.Args[1] != "seed" {
-			log.Fatalf("unknown command %q", os.Args[1])
-		}
-		if err := seed(db); err != nil {
-			log.Fatal(err)
-		}
-		log.Print("seed completed")
-		return
-	}
-
-	cfg, err := loadConfig()
-	if err != nil {
-		log.Fatal(err)
-	}
-	startStaleOrderCancellation(db)
-	e := newServer(db, cfg)
-	e.Logger.Fatal(e.Start(":8080"))
 }
 
-func startStaleOrderCancellation(db *gorm.DB) {
+func run() error {
+	command := ""
+	if len(os.Args) > 1 {
+		command = os.Args[1]
+		if command != "seed" {
+			return fmt.Errorf("unknown command %q", command)
+		}
+	}
+
+	var cfg config
+	var err error
+	if command == "" {
+		cfg, err = loadConfig()
+		if err != nil {
+			return err
+		}
+	}
+
+	db, err := openDatabase(databaseURL())
+	if err != nil {
+		return err
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		return fmt.Errorf("get database connection: %w", err)
+	}
+	defer sqlDB.Close()
+
+	if command == "seed" {
+		if err := seed(db); err != nil {
+			return err
+		}
+		log.Print("seed completed")
+		return nil
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	startStaleOrderCancellation(ctx, db)
+	e := newServer(db, cfg)
+	serverErr := make(chan error, 1)
+	go func() { serverErr <- e.Start(":8080") }()
+
+	select {
+	case err := <-serverErr:
+		if !errors.Is(err, http.ErrServerClosed) {
+			return fmt.Errorf("serve HTTP: %w", err)
+		}
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := e.Shutdown(shutdownCtx); err != nil {
+			return fmt.Errorf("shutdown HTTP server: %w", err)
+		}
+	}
+	return nil
+}
+
+func startStaleOrderCancellation(ctx context.Context, db *gorm.DB) {
 	cancel := func(now time.Time) {
 		count, err := cancelStaleWaitingInfoOrders(db, now)
 		if err != nil {
@@ -52,8 +94,13 @@ func startStaleOrderCancellation(db *gorm.DB) {
 	go func() {
 		ticker := time.NewTicker(time.Hour)
 		defer ticker.Stop()
-		for now := range ticker.C {
-			cancel(now)
+		for {
+			select {
+			case now := <-ticker.C:
+				cancel(now)
+			case <-ctx.Done():
+				return
+			}
 		}
 	}()
 }
@@ -72,6 +119,15 @@ func newServer(db *gorm.DB, cfg config) *echo.Echo {
 	}))
 
 	e.GET("/api/health", func(c echo.Context) error {
+		sqlDB, err := db.DB()
+		if err != nil {
+			return c.JSON(http.StatusServiceUnavailable, map[string]string{"status": "unavailable"})
+		}
+		ctx, cancel := context.WithTimeout(c.Request().Context(), 2*time.Second)
+		defer cancel()
+		if err := sqlDB.PingContext(ctx); err != nil {
+			return c.JSON(http.StatusServiceUnavailable, map[string]string{"status": "unavailable"})
+		}
 		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 	})
 	limiter := newLoginLimiter()

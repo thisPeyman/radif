@@ -1,7 +1,12 @@
 /bin/
+/dist/
 /web/dist/
 /web/node_modules/
 *.tsbuildinfo
 *.db
 *.db-*
 data/receipts/*
+/deploy/.env
+/deploy/.backup.lock
+/deploy/backups/
+/deploy/data/

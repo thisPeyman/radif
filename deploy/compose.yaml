@@ -1,0 +1,97 @@
+services:
+  db:
+    image: postgres:17.10-alpine
+    environment:
+      POSTGRES_DB: insta_helper
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_USER: insta_helper
+    ports:
+      - "${POSTGRES_BIND:-127.0.0.1:5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U insta_helper -d insta_helper"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: always
+    logging:
+      driver: local
+    networks:
+      - backend
+
+  app:
+    image: insta-helper:current
+    user: "${APP_UID:?set APP_UID in .env}:${APP_GID:?set APP_GID in .env}"
+    environment:
+      APP_ORIGIN: ${APP_ORIGIN:?set APP_ORIGIN in .env}
+      COOKIE_SECURE: ${COOKIE_SECURE:?set COOKIE_SECURE in .env}
+      DATABASE_URL: postgres://insta_helper:${POSTGRES_PASSWORD}@db:5432/insta_helper?sslmode=disable
+      DATA_DIR: /data
+      MAX_RECEIPT_BYTES: ${MAX_RECEIPT_BYTES:-5242880}
+      SESSION_LIFETIME: ${SESSION_LIFETIME:-720h}
+    volumes:
+      - ./data:/data
+    depends_on:
+      db:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp
+    restart: always
+    stop_grace_period: 15s
+    logging:
+      driver: local
+    networks:
+      - frontend
+      - backend
+
+  caddy:
+    image: caddy:2.11.2-alpine
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?set SITE_ADDRESS in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: always
+    logging:
+      driver: local
+    networks:
+      - frontend
+
+  backup:
+    profiles: ["ops"]
+    image: postgres:17.10-alpine
+    user: "${APP_UID}:${APP_GID}"
+    environment:
+      PGDATABASE: insta_helper
+      PGHOST: db
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGUSER: insta_helper
+    entrypoint: ["/bin/sh", "/ops/backup-container.sh"]
+    volumes:
+      - ./backup-container.sh:/ops/backup-container.sh:ro
+      - ./backups:/backups
+      - ./data:/data:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - backend
+
+volumes:
+  caddy-config:
+  caddy-data:
+  postgres-data:
+
+networks:
+  backend:
+  frontend:

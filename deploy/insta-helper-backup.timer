@@ -1,0 +1,10 @@
+[Unit]
+Description=Nightly Insta Helper backup
+
+[Timer]
+OnCalendar=*-*-* 03:00:00 Asia/Tehran
+Persistent=true
+Unit=insta-helper-backup.service
+
+[Install]
+WantedBy=timers.target

@@ -7,7 +7,7 @@ import (
 )
 
 func TestAPIRoutes(t *testing.T) {
-	e := newServer(nil, config{})
+	e := newServer(openTestDatabase(t), config{})
 
 	for path, want := range map[string]int{
 		"/api/health":  http.StatusOK,

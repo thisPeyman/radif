@@ -1,0 +1,46 @@
+#!/bin/sh
+set -eu
+
+if [ "$#" -ne 2 ]; then
+	echo "usage: $0 IMAGE.tar.gz TAG" >&2
+	exit 2
+fi
+
+archive=$(readlink -f "$1")
+tag=$2
+case "$tag" in
+	*[!a-zA-Z0-9_.-]*)
+		echo "invalid image tag: $tag" >&2
+		exit 2
+		;;
+esac
+
+checksum="$archive.sha256"
+if [ ! -f "$archive" ] || [ ! -f "$checksum" ]; then
+	echo "image archive and $checksum are required" >&2
+	exit 1
+fi
+(
+	cd "$(dirname "$archive")"
+	sha256sum -c "$(basename "$checksum")"
+)
+
+project_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+cd "$project_dir"
+
+if docker image inspect insta-helper:current >/dev/null 2>&1; then
+	"$project_dir/backup" pre-deploy
+	docker tag insta-helper:current insta-helper:previous
+fi
+
+docker image load -i "$archive"
+docker image inspect "insta-helper:$tag" >/dev/null
+docker tag "insta-helper:$tag" insta-helper:current
+
+docker compose up -d --wait db
+if ! docker compose up -d --force-recreate --no-deps --wait app; then
+	echo "deployment failed; follow the rollback command in DEPLOYMENT.md" >&2
+	exit 1
+fi
+docker compose up -d caddy
+echo "deployed insta-helper:$tag"

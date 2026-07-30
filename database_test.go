@@ -76,6 +76,9 @@ func TestMigrateAndSeedIsRepeatable(t *testing.T) {
 			t.Fatalf("table for %T was not created", model)
 		}
 	}
+	if !db.Migrator().HasTable("goose_db_version") {
+		t.Fatal("goose version table was not created")
+	}
 	if db.Migrator().HasColumn(&Order{}, "receipt_uploaded_at") {
 		t.Fatal("orders contains obsolete receipt_uploaded_at column")
 	}
@@ -96,8 +99,8 @@ func TestMigrateAndSeedIsRepeatable(t *testing.T) {
 		want  int64
 	}{
 		"admins":   {&Admin{}, 1},
-		"shops":    {&Shop{}, 2},
-		"products": {&Product{}, 4},
+		"shops":    {&Shop{}, 0},
+		"products": {&Product{}, 0},
 	} {
 		var count int64
 		if err := db.Model(check.model).Count(&count).Error; err != nil {

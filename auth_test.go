@@ -31,6 +31,16 @@ func newAuthTestServer(t *testing.T) (*gorm.DB, *echo.Echo, config, Admin) {
 	if err := db.First(&admin, "login = ?", "admin").Error; err != nil {
 		t.Fatal(err)
 	}
+	shop := Shop{OwnerAdminID: admin.ID, Name: "خانه آبی", LogoPath: "/images/shop-blue.svg", PaymentCardNumber: "6037991812345678", PaymentInstructions: "به نام فروشگاه خانه آبی", Active: true}
+	if err := db.Create(&shop).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create([]Product{
+		{ShopID: shop.ID, Name: "شمع موج", MainImagePath: "/images/product-blue.svg", DefaultPrice: 420_000, Active: true},
+		{ShopID: shop.ID, Name: "گلدان صدف", MainImagePath: "/images/product-saffron.svg", DefaultPrice: 680_000, Active: true},
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
 	cfg := config{appOrigin: testOrigin, sessionLifetime: time.Hour, secureCookies: true, receiptDir: filepath.Join(testDir, "receipts"), maxReceiptBytes: 1 << 20}
 	return db, newServer(db, cfg), cfg, admin
 }
