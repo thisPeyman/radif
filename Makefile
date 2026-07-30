@@ -46,5 +46,5 @@ release: check image
 	mkdir -p $(DIST_DIR)
 	docker image save -o $(DIST_DIR)/$(IMAGE)-$(TAG).tar $(IMAGE):$(TAG)
 	gzip -f $(DIST_DIR)/$(IMAGE)-$(TAG).tar
-	cd $(DIST_DIR) && sha256sum $(ARCHIVE) > $(ARCHIVE).sha256
+	cd $(DIST_DIR) && sha256sum $(ARCHIVE) > $(ARCHIVE).sha256 && sha256sum -c $(ARCHIVE).sha256
 	@printf 'release: %s/%s\n' $(DIST_DIR) $(ARCHIVE)

@@ -47,7 +47,7 @@ dist/insta-helper-551696f.tar.gz.sha256
 Set these examples for your server:
 
 ```sh
-export SERVER=203.0.113.10
+export SERVER=2.144.23.168
 export SERVER_USER=deploy
 ```
 
@@ -102,7 +102,7 @@ scp "dist/insta-helper-$TAG.tar.gz" "dist/insta-helper-$TAG.tar.gz.sha256" "$SER
 On the VPS:
 
 ```sh
-TAG=551696f
+TAG=58d9144
 cd /opt/insta-helper
 sudo ./deploy-image "/tmp/insta-helper-$TAG.tar.gz" "$TAG"
 curl --fail http://203.0.113.10/api/health

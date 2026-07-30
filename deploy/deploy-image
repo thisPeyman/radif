@@ -20,10 +20,25 @@ if [ ! -f "$archive" ] || [ ! -f "$checksum" ]; then
 	echo "image archive and $checksum are required" >&2
 	exit 1
 fi
-(
-	cd "$(dirname "$archive")"
-	sha256sum -c "$(basename "$checksum")"
-)
+expected=
+read -r expected _ < "$checksum" || true
+case "$expected" in
+	''|*[!0-9a-f]*)
+		echo "invalid SHA-256 checksum in $checksum" >&2
+		exit 1
+		;;
+esac
+if [ "${#expected}" -ne 64 ]; then
+	echo "invalid SHA-256 checksum in $checksum" >&2
+	exit 1
+fi
+actual=$(sha256sum "$archive")
+actual=${actual%% *}
+if [ "$actual" != "$expected" ]; then
+	echo "checksum mismatch for $archive" >&2
+	exit 1
+fi
+echo "$(basename "$archive"): OK"
 
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 cd "$project_dir"
