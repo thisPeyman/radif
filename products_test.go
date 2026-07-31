@@ -153,8 +153,11 @@ func TestProductManagementValidationAndOwnership(t *testing.T) {
 	if err := db.Create(&other).Error; err != nil {
 		t.Fatal(err)
 	}
-	otherShop := Shop{OwnerAdminID: other.ID, Name: "فروشگاه دیگر", PaymentCardNumber: "1", PaymentInstructions: "test", Active: true}
+	otherShop := Shop{Name: "فروشگاه دیگر", PaymentCardNumber: "1", PaymentInstructions: "test", Active: true}
 	if err := db.Create(&otherShop).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&AdminShop{AdminID: other.ID, ShopID: otherShop.ID}).Error; err != nil {
 		t.Fatal(err)
 	}
 	if response := productRequest(e, http.MethodPost, fmt.Sprintf("/api/shops/%d/products", otherShop.ID), validProductFields("محصول بیگانه"), png, testOrigin, cookie); response.Code != http.StatusNotFound {

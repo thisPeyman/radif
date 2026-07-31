@@ -157,7 +157,7 @@ func me(db *gorm.DB) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		admin := c.Get(adminContextKey).(*Admin)
 		var shops []Shop
-		if err := db.Where("owner_admin_id = ? AND active = ?", admin.ID, true).Order("id").Find(&shops).Error; err != nil {
+		if err := db.Joins("JOIN admin_shops ON admin_shops.shop_id = shops.id").Where("admin_shops.admin_id = ? AND shops.active = ?", admin.ID, true).Order("shops.id").Find(&shops).Error; err != nil {
 			return err
 		}
 
@@ -210,7 +210,7 @@ func requireAdmin(db *gorm.DB, cfg config) echo.MiddlewareFunc {
 	}
 }
 
-func requireShopOwner(db *gorm.DB) echo.MiddlewareFunc {
+func requireShopAccess(db *gorm.DB) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			shopID, err := strconv.ParseUint(c.Param("shopID"), 10, 64)
@@ -219,7 +219,7 @@ func requireShopOwner(db *gorm.DB) echo.MiddlewareFunc {
 			}
 			admin := c.Get(adminContextKey).(*Admin)
 			var shop Shop
-			err = db.Where("id = ? AND owner_admin_id = ?", shopID, admin.ID).First(&shop).Error
+			err = db.Joins("JOIN admin_shops ON admin_shops.shop_id = shops.id AND admin_shops.admin_id = ?", admin.ID).Where("shops.id = ?", shopID).First(&shop).Error
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return echo.NewHTTPError(http.StatusNotFound, "فروشگاه پیدا نشد.")
 			}

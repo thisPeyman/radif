@@ -40,8 +40,11 @@ func TestProductsRequireOwnedShop(t *testing.T) {
 	if err := db.Create(&otherAdmin).Error; err != nil {
 		t.Fatal(err)
 	}
-	otherShop := Shop{OwnerAdminID: otherAdmin.ID, Name: "فروشگاه محصولات دیگر", PaymentCardNumber: "6037991812345678", PaymentInstructions: "آزمایشی", Active: true}
+	otherShop := Shop{Name: "فروشگاه محصولات دیگر", PaymentCardNumber: "6037991812345678", PaymentInstructions: "آزمایشی", Active: true}
 	if err := db.Create(&otherShop).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&AdminShop{AdminID: otherAdmin.ID, ShopID: otherShop.ID}).Error; err != nil {
 		t.Fatal(err)
 	}
 	response = request(e, http.MethodGet, fmt.Sprintf("/api/shops/%d/products", otherShop.ID), "", "", cookie)
@@ -191,8 +194,11 @@ func createOtherOrder(t *testing.T, db *gorm.DB) Order {
 	if err := db.Create(&admin).Error; err != nil {
 		t.Fatal(err)
 	}
-	shop := Shop{OwnerAdminID: admin.ID, Name: "فروشگاه سفارش دیگر", PaymentCardNumber: "6037991812345678", PaymentInstructions: "آزمایشی", Active: true}
+	shop := Shop{Name: "فروشگاه سفارش دیگر", PaymentCardNumber: "6037991812345678", PaymentInstructions: "آزمایشی", Active: true}
 	if err := db.Create(&shop).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&AdminShop{AdminID: admin.ID, ShopID: shop.ID}).Error; err != nil {
 		t.Fatal(err)
 	}
 	product := Product{ShopID: shop.ID, Name: "محصول دیگر", MainImagePath: "/image.svg", DefaultPrice: 1, Active: true}

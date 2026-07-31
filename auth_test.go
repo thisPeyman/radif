@@ -31,8 +31,11 @@ func newAuthTestServer(t *testing.T) (*gorm.DB, *echo.Echo, config, Admin) {
 	if err := db.First(&admin, "login = ?", "admin").Error; err != nil {
 		t.Fatal(err)
 	}
-	shop := Shop{OwnerAdminID: admin.ID, Name: "خانه آبی", LogoPath: "/images/shop-blue.svg", PaymentCardNumber: "6037991812345678", PaymentInstructions: "به نام فروشگاه خانه آبی", Active: true}
+	shop := Shop{Name: "خانه آبی", LogoPath: "/images/shop-blue.svg", PaymentCardNumber: "6037991812345678", PaymentInstructions: "به نام فروشگاه خانه آبی", Active: true}
 	if err := db.Create(&shop).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&AdminShop{AdminID: admin.ID, ShopID: shop.ID}).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Create([]Product{
@@ -163,7 +166,7 @@ func TestLoginThrottling(t *testing.T) {
 	}
 }
 
-func TestShopOwnership(t *testing.T) {
+func TestShopAccess(t *testing.T) {
 	db, e, cfg, _ := newAuthTestServer(t)
 	var ownShop Shop
 	if err := db.First(&ownShop).Error; err != nil {
@@ -173,14 +176,17 @@ func TestShopOwnership(t *testing.T) {
 	if err := db.Create(&otherAdmin).Error; err != nil {
 		t.Fatal(err)
 	}
-	otherShop := Shop{OwnerAdminID: otherAdmin.ID, Name: "فروشگاه دیگر", PaymentCardNumber: "6037991812345678", PaymentInstructions: "آزمایشی", Active: true}
+	otherShop := Shop{Name: "فروشگاه دیگر", PaymentCardNumber: "6037991812345678", PaymentInstructions: "آزمایشی", Active: true}
 	if err := db.Create(&otherShop).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&AdminShop{AdminID: otherAdmin.ID, ShopID: otherShop.ID}).Error; err != nil {
 		t.Fatal(err)
 	}
 
 	e.GET("/api/test/shops/:shopID", func(c echo.Context) error {
 		return c.NoContent(http.StatusNoContent)
-	}, requireAdmin(db, cfg), requireShopOwner(db))
+	}, requireAdmin(db, cfg), requireShopAccess(db))
 	cookie := loginCookie(t, e)
 
 	for shopID, want := range map[uint]int{ownShop.ID: http.StatusNoContent, otherShop.ID: http.StatusNotFound} {
@@ -188,5 +194,14 @@ func TestShopOwnership(t *testing.T) {
 		if response.Code != want {
 			t.Errorf("shop %d returned %d, want %d", shopID, response.Code, want)
 		}
+	}
+
+	// Grant admin access to otherAdmin's shop
+	if err := db.Create(&AdminShop{AdminID: 1, ShopID: otherShop.ID}).Error; err != nil {
+		t.Fatal(err)
+	}
+	response := request(e, http.MethodGet, fmt.Sprintf("/api/test/shops/%d", otherShop.ID), "", "", cookie)
+	if response.Code != http.StatusNoContent {
+		t.Errorf("shared shop access returned %d, want %d", response.Code, http.StatusNoContent)
 	}
 }

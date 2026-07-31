@@ -100,7 +100,7 @@ func createOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 			return orderCreatedResponse(c, cfg, order)
 		}
 		var existing Order
-		err := db.Preload("Items").Joins("JOIN shops ON shops.id = orders.shop_id").Where("orders.create_key = ? AND shops.owner_admin_id = ?", input.CreateKey, admin.ID).First(&existing).Error
+		err := db.Preload("Items").Joins("JOIN shops ON shops.id = orders.shop_id").Joins("JOIN admin_shops ON admin_shops.shop_id = shops.id AND admin_shops.admin_id = ?", admin.ID).Where("orders.create_key = ?", input.CreateKey).First(&existing).Error
 		if err == nil {
 			return respondExisting(existing)
 		}
@@ -127,9 +127,9 @@ func createOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 		now := time.Now()
 		var products []Product
 		err = db.Transaction(func(tx *gorm.DB) error {
-			if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Joins("JOIN shops ON shops.id = products.shop_id").Where(
-				"products.id IN ? AND products.shop_id = ? AND products.active = ? AND shops.active = ? AND shops.owner_admin_id = ?",
-				productIDs, input.ShopID, true, true, admin.ID,
+			if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Joins("JOIN shops ON shops.id = products.shop_id").Joins("JOIN admin_shops ON admin_shops.shop_id = shops.id AND admin_shops.admin_id = ?", admin.ID).Where(
+				"products.id IN ? AND products.shop_id = ? AND products.active = ? AND shops.active = ?",
+				productIDs, input.ShopID, true, true,
 			).Find(&products).Error; err != nil {
 				return err
 			}
@@ -161,7 +161,7 @@ func createOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 			return tx.Create(&events).Error
 		})
 		if errors.Is(err, errOrderAlreadyCreated) {
-			err := db.Preload("Items").Joins("JOIN shops ON shops.id = orders.shop_id").Where("orders.create_key = ? AND shops.owner_admin_id = ?", input.CreateKey, admin.ID).First(&existing).Error
+		err := db.Preload("Items").Joins("JOIN shops ON shops.id = orders.shop_id").Joins("JOIN admin_shops ON admin_shops.shop_id = shops.id AND admin_shops.admin_id = ?", admin.ID).Where("orders.create_key = ?", input.CreateKey).First(&existing).Error
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return echo.NewHTTPError(http.StatusConflict, "شناسه ساخت سفارش قبلاً استفاده شده است.")
 			}
@@ -276,7 +276,7 @@ func updateOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 		admin := c.Get(adminContextKey).(*Admin)
 		err = db.Transaction(func(tx *gorm.DB) error {
 			var order Order
-			err := tx.Joins("JOIN shops ON shops.id = orders.shop_id").Where("orders.id = ? AND shops.owner_admin_id = ?", orderID, admin.ID).First(&order).Error
+			err := tx.Joins("JOIN shops ON shops.id = orders.shop_id").Joins("JOIN admin_shops ON admin_shops.shop_id = shops.id AND admin_shops.admin_id = ?", admin.ID).Where("orders.id = ?", orderID).First(&order).Error
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return echo.NewHTTPError(http.StatusNotFound, "سفارش پیدا نشد.")
 			}
@@ -351,7 +351,7 @@ func listOrders(db *gorm.DB) echo.HandlerFunc {
 		}
 		admin := c.Get(adminContextKey).(*Admin)
 		var shop Shop
-		if err := db.Where("id = ? AND owner_admin_id = ?", shopID, admin.ID).First(&shop).Error; errors.Is(err, gorm.ErrRecordNotFound) {
+		if err := db.Joins("JOIN admin_shops ON admin_shops.shop_id = shops.id AND admin_shops.admin_id = ?", admin.ID).Where("shops.id = ?", shopID).First(&shop).Error; errors.Is(err, gorm.ErrRecordNotFound) {
 			return echo.NewHTTPError(http.StatusNotFound, "فروشگاه پیدا نشد.")
 		} else if err != nil {
 			return err
@@ -463,7 +463,7 @@ func getOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 func findAdminOrder(db *gorm.DB, adminID, orderID uint) (Order, error) {
 	var order Order
 	err := db.Preload("Shop").Preload("Items.Product").Preload("History", func(query *gorm.DB) *gorm.DB { return query.Order("created_at, id") }).Preload("History.ChangedByAdmin").
-		Joins("JOIN shops ON shops.id = orders.shop_id").Where("orders.id = ? AND shops.owner_admin_id = ?", orderID, adminID).First(&order).Error
+		Joins("JOIN shops ON shops.id = orders.shop_id").Joins("JOIN admin_shops ON admin_shops.shop_id = shops.id AND admin_shops.admin_id = ?", adminID).Where("orders.id = ?", orderID).First(&order).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return Order{}, echo.NewHTTPError(http.StatusNotFound, "سفارش پیدا نشد.")
 	}
@@ -522,7 +522,7 @@ func getOrderReceipt(db *gorm.DB, cfg config) echo.HandlerFunc {
 		}
 		admin := c.Get(adminContextKey).(*Admin)
 		var order Order
-		err = db.Joins("JOIN shops ON shops.id = orders.shop_id").Where("orders.id = ? AND shops.owner_admin_id = ?", orderID, admin.ID).First(&order).Error
+		err = db.Joins("JOIN shops ON shops.id = orders.shop_id").Joins("JOIN admin_shops ON admin_shops.shop_id = shops.id AND admin_shops.admin_id = ?", admin.ID).Where("orders.id = ?", orderID).First(&order).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return echo.NewHTTPError(http.StatusNotFound, "رسید پیدا نشد.")
 		}
@@ -656,7 +656,7 @@ func recordLinkCopied(db *gorm.DB) echo.HandlerFunc {
 		}
 		admin := c.Get(adminContextKey).(*Admin)
 		var order Order
-		err = db.Joins("JOIN shops ON shops.id = orders.shop_id").Where("orders.id = ? AND shops.owner_admin_id = ?", orderID, admin.ID).First(&order).Error
+		err = db.Joins("JOIN shops ON shops.id = orders.shop_id").Joins("JOIN admin_shops ON admin_shops.shop_id = shops.id AND admin_shops.admin_id = ?", admin.ID).Where("orders.id = ?", orderID).First(&order).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return echo.NewHTTPError(http.StatusNotFound, "سفارش پیدا نشد.")
 		}

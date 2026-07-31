@@ -19,11 +19,15 @@ type Session struct {
 	CreatedAt time.Time
 }
 
+type AdminShop struct {
+	AdminID   uint `gorm:"primaryKey"`
+	ShopID    uint `gorm:"primaryKey"`
+	CreatedAt time.Time
+}
+
 type Shop struct {
 	ID                  uint   `gorm:"primaryKey"`
-	OwnerAdminID        uint   `gorm:"not null;uniqueIndex:idx_shops_owner_name"`
-	Owner               Admin  `gorm:"foreignKey:OwnerAdminID"`
-	Name                string `gorm:"not null;uniqueIndex:idx_shops_owner_name"`
+	Name                string `gorm:"not null"`
 	LogoPath            string
 	ShortDescription    string
 	PaymentCardNumber   string `gorm:"not null"`

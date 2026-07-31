@@ -69,7 +69,7 @@ func TestMigrateAndSeedIsRepeatable(t *testing.T) {
 	db := openTestDatabase(t)
 
 	models := []any{
-		&Admin{}, &Session{}, &Shop{}, &Product{}, &Order{}, &OrderItem{}, &OrderStatusHistory{}, &PilotEvent{},
+		&Admin{}, &Session{}, &AdminShop{}, &Shop{}, &Product{}, &Order{}, &OrderItem{}, &OrderStatusHistory{}, &PilotEvent{},
 	}
 	for _, model := range models {
 		if !db.Migrator().HasTable(model) {
