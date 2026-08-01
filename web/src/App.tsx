@@ -18,6 +18,7 @@ import {
   Pencil,
   Plus,
   RotateCcw,
+  Share2,
   Store,
   Search,
   Truck,
@@ -343,9 +344,7 @@ function newCreateKey(shopID: number) {
 function Brand() {
   return (
     <div className="flex items-center gap-3">
-      <span className="grid size-12 place-items-center rounded-2xl bg-saffron text-ink shadow-sm">
-        <ClipboardList aria-hidden="true" strokeWidth={1.8} />
-      </span>
+      <img className="size-12 rounded-2xl" src="/icons/icon-96.png" alt="" />
       <div>
         <p className="text-2xl font-black leading-none">ردیف</p>
         <p className="mt-1 text-sm text-ink/70">دفتر آرام سفارش‌های شما</p>
@@ -1588,6 +1587,7 @@ function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; onBusyChange: (bu
   const [copyState, setCopyState] = useState<"copying" | "copied" | "failed">("copying");
   const startedAt = useRef(performance.now());
   const [createKey, setCreateKey] = useState(() => newCreateKey(shop.id));
+  const canShare = typeof navigator.share === "function";
 
   useEffect(() => () => onBusyChange(false), [onBusyChange]);
   useEffect(() => {
@@ -1636,6 +1636,10 @@ function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; onBusyChange: (bu
     }
   }
 
+  function shareMessage(order: CreatedOrder) {
+    return `سلام، سفارش شما در فروشگاه ${shop.name} با کد ${order.orderCode} ثبت شد.\n\nلطفاً برای تکمیل اطلاعات سفارش و ارسال رسید پرداخت، از لینک زیر استفاده کنید:\n${order.customerUrl}`;
+  }
+
   async function copyLink(order: CreatedOrder) {
     setCopyState("copying");
     try {
@@ -1645,6 +1649,19 @@ function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; onBusyChange: (bu
       await recordCopy(order).catch(() => undefined);
     } catch {
       setCopyState("failed");
+    }
+  }
+
+  async function shareOrder(order: CreatedOrder) {
+    if (!canShare) {
+      await copyLink(order);
+      return;
+    }
+    try {
+      await navigator.share({ text: shareMessage(order) });
+    } catch (reason) {
+      if (reason instanceof DOMException && reason.name === "AbortError") return;
+      await copyLink(order);
     }
   }
 
@@ -1797,7 +1814,14 @@ function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; onBusyChange: (bu
           )}
         </div>
 
-        <div className="mt-6 rounded-3xl border border-saffron/50 bg-saffron/10 p-4">
+        {canShare && (
+          <button className="primary-button mt-6 w-full" type="button" onClick={() => shareOrder(created)}>
+            <Share2 className="size-5" aria-hidden="true" />
+            اشتراک‌گذاری پیام
+          </button>
+        )}
+
+        <div className={`${canShare ? "mt-3" : "mt-6"} rounded-3xl border border-saffron/50 bg-saffron/10 p-4`}>
           <label className="text-sm font-bold" htmlFor="customer-link">لینک مشتری</label>
           <input
             id="customer-link"
@@ -1813,7 +1837,7 @@ function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; onBusyChange: (bu
           </button>
         </div>
 
-        <button className="primary-button mt-8 w-full" type="button" onClick={reset} disabled={pending}>
+        <button className="secondary-button mt-8 w-full" type="button" onClick={reset} disabled={pending}>
           <Plus className="size-5" aria-hidden="true" />
           ساخت سفارش دیگر
         </button>
