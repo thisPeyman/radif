@@ -96,7 +96,7 @@ On the local computer, get the tag and upload both release files:
 
 ```sh
 TAG=$(git describe --always --dirty)
-scp "dist/insta-helper-$TAG.tar.gz" "dist/insta-helper-$TAG.tar.gz.sha256" "$SERVER_USER@$SERVER:/tmp/"
+rsync -avP "dist/insta-helper-$TAG.tar.gz" "dist/insta-helper-$TAG.tar.gz.sha256" "$SERVER_USER@$SERVER:/tmp/"
 ```
 
 On the VPS:
@@ -132,17 +132,18 @@ Use a temporary password during HTTP testing. Do not enter real customer details
 
 ## Configure a domain and HTTPS
 
-Buy a domain and point its `A` record to the VPS. Add an `AAAA` record only if IPv6 actually reaches this server. Wait until public DNS resolves correctly:
+Buy a domain and point its `A` record to the VPS. Point `www` to the domain with a `CNAME` record. Add an `AAAA` record only if IPv6 actually reaches this server. Wait until public DNS resolves correctly:
 
 ```sh
-dig +short app.example.com A
+dig +short example.com A
+dig +short www.example.com A
 ```
 
 Change `.env`:
 
 ```dotenv
-SITE_ADDRESS=app.example.com
-APP_ORIGIN=https://app.example.com
+SITE_ADDRESS="example.com, www.example.com"
+APP_ORIGIN=https://example.com
 COOKIE_SECURE=true
 ```
 
@@ -152,7 +153,8 @@ Recreate only the services whose environment changed:
 cd /opt/insta-helper
 sudo docker compose up -d --force-recreate --no-deps --wait app
 sudo docker compose up -d --force-recreate --no-deps caddy
-curl --fail https://app.example.com/api/health
+curl --fail https://example.com/api/health
+curl --fail --head https://www.example.com/api/health
 sudo docker compose logs --since=10m caddy
 ```
 
