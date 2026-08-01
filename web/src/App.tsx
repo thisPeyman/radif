@@ -507,7 +507,7 @@ function LandingPage() {
             <p className="landing-eyebrow">پایلوت ردیف</p>
             <h2>۱۴ روز با سفارش‌های واقعی امتحانش کن.</h2>
             <div className="landing-client-proof">
-              <span className="landing-client-logo" aria-hidden="true">M</span>
+              <img className="landing-client-logo" src="/images/miroki.jpg" alt="" />
               <p><strong>میروکی، فروشگاه آنلاین دنج</strong><span>ردیف به میروکی کمک می‌کند سفارش‌های اینستاگرامی چراغ‌های پرینت سه‌بعدی را یک‌جا مدیریت کند.</span></p>
             </div>
           </div>
@@ -1223,21 +1223,22 @@ function PublicOrderPage() {
 
   return (
     <div className="app-viewport min-h-dvh px-5 pb-10 pt-[max(1.5rem,env(safe-area-inset-top))] text-ink sm:min-h-[760px] sm:px-6">
-      <Brand />
+      <a className="inline-flex min-h-11 items-center gap-1.5 text-xs font-bold text-ink/60 no-underline transition-colors hover:text-teal" href="/" target="_blank" rel="noreferrer" aria-label="درباره ردیف">
+        <ClipboardList className="size-4" aria-hidden="true" />
+        ساخته‌شده با <strong className="text-ink/80">ردیف</strong>
+      </a>
       {loading && <div className="grid min-h-[60dvh] place-items-center"><LoaderCircle className="size-7 animate-spin text-teal" aria-label="در حال دریافت سفارش" /></div>}
       {error && <div className="mt-10"><ErrorNotice retry={() => setReload((value) => value + 1)}>{error}</ErrorNotice></div>}
       {order && (
-        <main className="mt-10">
-          <div className="flex items-center gap-3">
-            <span className="relative grid size-12 place-items-center overflow-hidden rounded-2xl bg-ledger">
-              <Store className="size-5" aria-hidden="true" />
+        <main className="mt-6">
+          <header className="text-center">
+            <span className="relative mx-auto grid size-20 place-items-center overflow-hidden rounded-[1.75rem] bg-ledger shadow-sm ring-4 ring-white">
+              <Store className="size-7" aria-hidden="true" />
               {order.shop.logoPath && <img className="absolute inset-0 size-full object-cover" src={order.shop.logoPath} alt="" />}
             </span>
-            <div>
-              <p className="text-xs font-bold text-ink/70">{order.orderCode.replace(/\d/g, (digit) => persianDigits[Number(digit)])}</p>
-              <h1 className="text-xl font-black">سفارش از {order.shop.name}</h1>
-            </div>
-          </div>
+            <h1 className="mt-4 text-2xl font-black">{order.shop.name}</h1>
+            <p className="mt-1 text-xs font-bold text-ink/60">سفارش {order.orderCode.replace(/\d/g, (digit) => persianDigits[Number(digit)])}</p>
+          </header>
 
           <section className="mt-7 border-r-4 border-teal bg-white px-5 py-4 shadow-sm">
             <p className="text-xs font-bold text-ink/70">وضعیت سفارش</p>

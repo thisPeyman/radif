@@ -12,7 +12,7 @@
 }
 
 :root {
-  font-family: "Vazirmatn Variable", sans-serif;
+  font-family: "Manrope Variable", "Vazirmatn Variable", sans-serif;
   font-synthesis: none;
 }
 
@@ -585,16 +585,13 @@ button:disabled {
 }
 
 .landing-client-logo {
-  display: grid;
+  display: block;
   width: 3.5rem;
   height: 3.5rem;
   flex-shrink: 0;
-  place-items: center;
-  border: 1px dashed rgb(247 249 248 / 35%);
+  border: 1px solid rgb(247 249 248 / 35%);
   border-radius: 1rem;
-  color: #e9a928;
-  font-size: 1.25rem;
-  font-weight: 950;
+  object-fit: cover;
 }
 
 .landing-client-proof strong,

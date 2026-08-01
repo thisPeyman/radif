@@ -1,3 +1,4 @@
+import "@fontsource-variable/manrope";
 import "@fontsource-variable/vazirmatn";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
