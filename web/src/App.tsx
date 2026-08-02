@@ -8,6 +8,7 @@ import {
   Clipboard,
   ClipboardCheck,
   ClipboardList,
+  Download,
   Eye,
   EyeOff,
   ImagePlus,
@@ -24,6 +25,7 @@ import {
   Truck,
   Upload,
   UserRound,
+  X,
   ZoomIn,
 } from "lucide-react";
 import { DayPicker } from "@daypicker/persian";
@@ -54,6 +56,21 @@ type Me = {
   admin: { id: number; name: string; login: string };
   shops: Shop[];
 };
+
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
+};
+
+function isStandalone() {
+  return window.matchMedia("(display-mode: standalone)").matches
+    || Boolean((navigator as Navigator & { standalone?: boolean }).standalone);
+}
+
+function isIOS() {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent)
+    || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
 
 type Product = {
   id: number;
@@ -714,6 +731,46 @@ function BottomNavigation({ disabled }: { disabled: boolean }) {
         </NavLink>
       ))}
     </nav>
+  );
+}
+
+function InstallPrompt({ event, onDone }: { event: BeforeInstallPromptEvent | null; onDone: () => void }) {
+  const [dismissed, setDismissed] = useState(() => Date.now() - Number(localStorage.getItem("radif_install_dismissed_at")) < 7 * 24 * 60 * 60 * 1000);
+  const ios = isIOS();
+
+  if (dismissed || isStandalone() || (!event && !ios)) return null;
+
+  function dismiss() {
+    localStorage.setItem("radif_install_dismissed_at", String(Date.now()));
+    setDismissed(true);
+  }
+
+  async function install() {
+    if (!event) return;
+    await event.prompt();
+    const { outcome } = await event.userChoice;
+    if (outcome === "dismissed") dismiss();
+    onDone();
+  }
+
+  return (
+    <aside className="install-prompt" aria-label="نصب اپلیکیشن ردیف">
+      <button className="grid size-10 shrink-0 place-items-center rounded-xl text-ink/60" type="button" onClick={dismiss} aria-label="بستن پیشنهاد نصب">
+        <X className="size-5" aria-hidden="true" />
+      </button>
+      <div className="min-w-0 flex-1">
+        <p className="font-black">ردیف را روی گوشی نصب کنید</p>
+        <p className="mt-1 text-xs leading-6 text-ink/70">
+          {event ? "دسترسی سریع‌تر و نمایش تمام‌صفحه، بدون نیاز به باز کردن مرورگر." : "در Safari روی اشتراک‌گذاری بزنید و «افزودن به صفحه اصلی» را انتخاب کنید."}
+        </p>
+        {event && (
+          <button className="primary-button mt-3 min-h-11! px-4! text-sm" type="button" onClick={install}>
+            <Download className="size-4" aria-hidden="true" />
+            نصب ردیف
+          </button>
+        )}
+      </div>
+    </aside>
   );
 }
 
@@ -2162,7 +2219,7 @@ function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; onBusyChange: (bu
   );
 }
 
-function AdminApp({ me, onShopUpdated, onLogout }: { me: Me; onShopUpdated: (shop: Shop) => void; onLogout: () => void }) {
+function AdminApp({ me, installPrompt, onInstallDone, onShopUpdated, onLogout }: { me: Me; installPrompt: BeforeInstallPromptEvent | null; onInstallDone: () => void; onShopUpdated: (shop: Shop) => void; onLogout: () => void }) {
   const savedID = Number(localStorage.getItem("radif_shop_id"));
   const [shopID, setShopID] = useState(me.shops.some((shop) => shop.id === savedID) ? savedID : me.shops[0]?.id);
   const [creating, setCreating] = useState(false);
@@ -2209,6 +2266,7 @@ function AdminApp({ me, onShopUpdated, onLogout }: { me: Me; onShopUpdated: (sho
           <Route path="*" element={<Navigate to="/orders/new" replace />} />
         </Routes>
       </main>
+      <InstallPrompt event={installPrompt} onDone={onInstallDone} />
       <BottomNavigation disabled={creating} />
     </div>
   );
@@ -2216,9 +2274,24 @@ function AdminApp({ me, onShopUpdated, onLogout }: { me: Me; onShopUpdated: (sho
 
 export default function App() {
   const [session, setSession] = useState<{ state: "loading" } | { state: "guest" } | { state: "ready"; me: Me }>({ state: "loading" });
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const location = useLocation();
   const isLanding = location.pathname === "/";
   const isPublicOrder = location.pathname.startsWith("/o/");
+
+  useEffect(() => {
+    const beforeInstall = (event: Event) => {
+      event.preventDefault();
+      setInstallPrompt(event as BeforeInstallPromptEvent);
+    };
+    const installed = () => setInstallPrompt(null);
+    window.addEventListener("beforeinstallprompt", beforeInstall);
+    window.addEventListener("appinstalled", installed);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", beforeInstall);
+      window.removeEventListener("appinstalled", installed);
+    };
+  }, []);
 
   useEffect(() => {
     if (isLanding || isPublicOrder) return;
@@ -2253,5 +2326,5 @@ export default function App() {
     );
   }
   if (location.pathname === "/login") return <Navigate to="/orders/new" replace />;
-  return <AdminApp me={session.me} onShopUpdated={(shop) => setSession({ state: "ready", me: { ...session.me, shops: session.me.shops.map((current) => current.id === shop.id ? shop : current) } })} onLogout={() => setSession({ state: "guest" })} />;
+  return <AdminApp me={session.me} installPrompt={installPrompt} onInstallDone={() => setInstallPrompt(null)} onShopUpdated={(shop) => setSession({ state: "ready", me: { ...session.me, shops: session.me.shops.map((current) => current.id === shop.id ? shop : current) } })} onLogout={() => setSession({ state: "guest" })} />;
 }

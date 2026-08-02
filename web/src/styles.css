@@ -786,6 +786,22 @@ button:disabled {
   backdrop-filter: blur(16px);
 }
 
+.install-prompt {
+  position: fixed;
+  z-index: 40;
+  bottom: calc(5.5rem + env(safe-area-inset-bottom));
+  left: 50%;
+  display: flex;
+  width: min(calc(100% - 2rem), 448px);
+  transform: translateX(-50%);
+  gap: 0.5rem;
+  border: 1px solid rgb(40 114 102 / 22%);
+  border-radius: 1rem;
+  background: #fff;
+  padding: 1rem;
+  box-shadow: 0 16px 45px rgb(3 20 29 / 22%);
+}
+
 .nav-item {
   position: relative;
   display: flex;
@@ -1020,6 +1036,10 @@ details[open] .details-chevron {
 
   .bottom-navigation {
     bottom: 2rem;
+  }
+
+  .install-prompt {
+    bottom: 7.5rem;
   }
 
   .create-action {
