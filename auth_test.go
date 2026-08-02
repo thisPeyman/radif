@@ -221,16 +221,37 @@ func TestUpdateShopSupport(t *testing.T) {
 	if response := request(e, http.MethodPatch, path, `{"supportChannel":"instagram"}`, testOrigin, cookie); response.Code != http.StatusBadRequest {
 		t.Fatalf("missing selected contact returned %d: %s", response.Code, response.Body.String())
 	}
-	response := request(e, http.MethodPatch, path, `{"instagramUsername":" @blue.shop ","whatsappNumber":"۰۹۱۲ ۳۴۵ ۶۷۸۹","supportChannel":"whatsapp"}`, testOrigin, cookie)
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"whatsappNumber":"989123456789"`) {
+	if response := request(e, http.MethodPatch, path, `{"shareMessageTemplate":"بدون لینک"}`, testOrigin, cookie); response.Code != http.StatusBadRequest {
+		t.Fatalf("template without customer URL returned %d: %s", response.Code, response.Body.String())
+	}
+	tooLong := strings.Repeat("x", 1001) + "{customerUrl}"
+	if response := request(e, http.MethodPatch, path, fmt.Sprintf(`{"shareMessageTemplate":%q}`, tooLong), testOrigin, cookie); response.Code != http.StatusBadRequest {
+		t.Fatalf("oversized template returned %d: %s", response.Code, response.Body.String())
+	}
+	response := request(e, http.MethodPatch, path, `{"instagramUsername":" @blue.shop ","whatsappNumber":"۰۹۱۲ ۳۴۵ ۶۷۸۹","supportChannel":"whatsapp","shareMessageTemplate":"سفارش {orderCode}\n{customerUrl}"}`, testOrigin, cookie)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"whatsappNumber":"989123456789"`) || !strings.Contains(response.Body.String(), `"shareMessageTemplate":"سفارش {orderCode}\n{customerUrl}"`) {
 		t.Fatalf("support update returned %d: %s", response.Code, response.Body.String())
 	}
-	if err := db.First(&shop, shop.ID).Error; err != nil || shop.InstagramUsername != "blue.shop" || shop.WhatsAppNumber != "989123456789" || shop.SupportChannel != "whatsapp" {
+	if err := db.First(&shop, shop.ID).Error; err != nil || shop.InstagramUsername != "blue.shop" || shop.WhatsAppNumber != "989123456789" || shop.SupportChannel != "whatsapp" || shop.ShareMessageTemplate != "سفارش {orderCode}\n{customerUrl}" {
 		t.Fatalf("unexpected stored support: %#v, error %v", shop, err)
 	}
+	response = request(e, http.MethodPatch, path, `{"instagramUsername":"blue.shop","whatsappNumber":"989123456789","supportChannel":"whatsapp"}`, testOrigin, cookie)
+	if response.Code != http.StatusOK {
+		t.Fatalf("support-only update returned %d: %s", response.Code, response.Body.String())
+	}
+	if err := db.First(&shop, shop.ID).Error; err != nil || shop.ShareMessageTemplate != "سفارش {orderCode}\n{customerUrl}" {
+		t.Fatalf("support-only update cleared template: %#v, error %v", shop, err)
+	}
 	meResponse := request(e, http.MethodGet, "/api/me", "", "", cookie)
-	if meResponse.Code != http.StatusOK || !strings.Contains(meResponse.Body.String(), `"supportChannel":"whatsapp"`) {
+	if meResponse.Code != http.StatusOK || !strings.Contains(meResponse.Body.String(), `"supportChannel":"whatsapp"`) || !strings.Contains(meResponse.Body.String(), `"shareMessageTemplate":"سفارش {orderCode}\n{customerUrl}"`) {
 		t.Fatalf("me did not include support settings: %s", meResponse.Body.String())
+	}
+	response = request(e, http.MethodPatch, path, `{"instagramUsername":"blue.shop","whatsappNumber":"989123456789","supportChannel":"whatsapp","shareMessageTemplate":""}`, testOrigin, cookie)
+	if response.Code != http.StatusOK {
+		t.Fatalf("clearing template returned %d: %s", response.Code, response.Body.String())
+	}
+	if err := db.First(&shop, shop.ID).Error; err != nil || shop.ShareMessageTemplate != "" {
+		t.Fatalf("template was not cleared: %#v, error %v", shop, err)
 	}
 	if response := request(e, http.MethodPatch, "/api/shops/999999/support", `{}`, testOrigin, cookie); response.Code != http.StatusNotFound {
 		t.Fatalf("unowned shop update returned %d", response.Code)

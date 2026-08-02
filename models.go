@@ -26,18 +26,19 @@ type AdminShop struct {
 }
 
 type Shop struct {
-	ID                  uint   `gorm:"primaryKey"`
-	Name                string `gorm:"not null"`
-	LogoPath            string
-	ShortDescription    string
-	PaymentCardNumber   string `gorm:"not null"`
-	PaymentInstructions string `gorm:"not null"`
-	InstagramUsername   string `gorm:"not null"`
-	WhatsAppNumber      string `gorm:"column:whatsapp_number;not null"`
-	SupportChannel      string `gorm:"not null"`
-	Active              bool   `gorm:"not null;index"`
-	CreatedAt           time.Time
-	UpdatedAt           time.Time
+	ID                   uint   `gorm:"primaryKey"`
+	Name                 string `gorm:"not null"`
+	LogoPath             string
+	ShortDescription     string
+	PaymentCardNumber    string `gorm:"not null"`
+	PaymentInstructions  string `gorm:"not null"`
+	InstagramUsername    string `gorm:"not null"`
+	WhatsAppNumber       string `gorm:"column:whatsapp_number;not null"`
+	SupportChannel       string `gorm:"not null"`
+	ShareMessageTemplate string `gorm:"not null"`
+	Active               bool   `gorm:"not null;index"`
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
 }
 
 type Product struct {

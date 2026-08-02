@@ -50,7 +50,10 @@ type Shop = {
   instagramUsername?: string;
   whatsappNumber?: string;
   supportChannel?: "instagram" | "whatsapp";
+  shareMessageTemplate?: string;
 };
+
+const defaultShareMessageTemplate = "سلام، سفارش شما در فروشگاه {shopName} با کد {orderCode} ثبت شد.\n\nلطفاً برای تکمیل اطلاعات سفارش و ارسال رسید پرداخت، از لینک زیر استفاده کنید:\n{customerUrl}";
 
 type Me = {
   admin: { id: number; name: string; login: string };
@@ -999,11 +1002,13 @@ function AccountPage({ me, shop, onShopUpdated, onLogout }: { me: Me; shop: Shop
   const [instagramUsername, setInstagramUsername] = useState(shop.instagramUsername ?? "");
   const [whatsappNumber, setWhatsappNumber] = useState(shop.whatsappNumber ? `+${shop.whatsappNumber}` : "");
   const [supportChannel, setSupportChannel] = useState(shop.supportChannel ?? "");
+  const [shareMessageTemplate, setShareMessageTemplate] = useState(shop.shareMessageTemplate ?? "");
 
   useEffect(() => {
     setInstagramUsername(shop.instagramUsername ?? "");
     setWhatsappNumber(shop.whatsappNumber ? `+${shop.whatsappNumber}` : "");
     setSupportChannel(shop.supportChannel ?? "");
+    setShareMessageTemplate(shop.shareMessageTemplate ?? "");
     setSaved(false);
     setError("");
   }, [shop.id]);
@@ -1014,18 +1019,19 @@ function AccountPage({ me, shop, onShopUpdated, onLogout }: { me: Me; shop: Shop
     setSaved(false);
     setError("");
     try {
-      const support = await api<{ instagramUsername?: string; whatsappNumber?: string; supportChannel?: "instagram" | "whatsapp" }>(`/api/shops/${shop.id}/support`, {
+      const support = await api<{ instagramUsername?: string; whatsappNumber?: string; supportChannel?: "instagram" | "whatsapp"; shareMessageTemplate?: string }>(`/api/shops/${shop.id}/support`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ instagramUsername, whatsappNumber, supportChannel }),
+        body: JSON.stringify({ instagramUsername, whatsappNumber, supportChannel, shareMessageTemplate }),
       });
       onShopUpdated({ ...shop, ...support });
       setInstagramUsername(support.instagramUsername ?? "");
       setWhatsappNumber(support.whatsappNumber ? `+${support.whatsappNumber}` : "");
       setSupportChannel(support.supportChannel ?? "");
+      setShareMessageTemplate(support.shareMessageTemplate ?? "");
       setSaved(true);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "اطلاعات تماس ذخیره نشد.");
+      setError(reason instanceof Error ? reason.message : "تنظیمات فروشگاه ذخیره نشد.");
     } finally {
       setSaving(false);
     }
@@ -1072,10 +1078,19 @@ function AccountPage({ me, shop, onShopUpdated, onLogout }: { me: Me; shop: Shop
             <option value="whatsapp">واتساپ</option>
           </select>
         </label>
-        {saved && <p className="mt-4 text-sm font-bold text-teal" role="status">اطلاعات تماس ذخیره شد.</p>}
+        <div className="my-5 h-px bg-ledger" />
+        <h2 className="font-black">پیام اشتراک‌گذاری سفارش</h2>
+        <p className="mt-1 text-sm leading-7 text-ink/70">متن دلخواه را با متغیرهای زیر بنویسید. خالی‌گذاشتن این بخش، پیام پیش‌فرض را برمی‌گرداند.</p>
+        <p className="mt-2 text-xs leading-6 text-ink/70" dir="ltr">{`{shopName} · {orderCode} · {customerUrl} · {amount} · {deliveryDate}`}</p>
+        <label className="mt-4 block">
+          <span className="sr-only">متن پیام اشتراک‌گذاری</span>
+          <textarea className="field min-h-40 resize-y leading-7" maxLength={1000} placeholder={defaultShareMessageTemplate} value={shareMessageTemplate} onChange={(event) => { setShareMessageTemplate(event.target.value); setSaved(false); }} />
+        </label>
+        <p className="mt-2 text-xs leading-6 text-ink/70">پیام سفارشی باید شامل <span dir="ltr">{"{customerUrl}"}</span> باشد.</p>
+        {saved && <p className="mt-4 text-sm font-bold text-teal" role="status">تنظیمات فروشگاه ذخیره شد.</p>}
         <button className="primary-button mt-5 w-full" type="submit" disabled={saving}>
           {saving ? <LoaderCircle className="size-5 animate-spin" /> : <Check className="size-5" />}
-          {saving ? "در حال ذخیره…" : "ذخیره راه ارتباطی"}
+          {saving ? "در حال ذخیره…" : "ذخیره تنظیمات"}
         </button>
       </form>
       {error && <div className="mt-4"><ErrorNotice>{error}</ErrorNotice></div>}
@@ -1972,14 +1987,21 @@ function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; onBusyChange: (bu
   }
 
   function shareMessage(order: CreatedOrder) {
-    return `سلام، سفارش شما در فروشگاه ${shop.name} با کد ${order.orderCode} ثبت شد.\n\nلطفاً برای تکمیل اطلاعات سفارش و ارسال رسید پرداخت، از لینک زیر استفاده کنید:\n${order.customerUrl}`;
+    const values: Record<string, string> = {
+      "{shopName}": shop.name,
+      "{orderCode}": order.orderCode,
+      "{customerUrl}": order.customerUrl,
+      "{amount}": `${persianNumber(Number(amount))} تومان`,
+      "{deliveryDate}": persianDate(order.estimatedDeliveryDate),
+    };
+    return (shop.shareMessageTemplate || defaultShareMessageTemplate).replace(/\{(?:shopName|orderCode|customerUrl|amount|deliveryDate)\}/g, (placeholder) => values[placeholder]);
   }
 
-  async function copyLink(order: CreatedOrder) {
+  async function copyText(order: CreatedOrder, text: string) {
     setCopyState("copying");
     try {
       if (!navigator.clipboard?.writeText) throw new Error("clipboard unavailable");
-      await navigator.clipboard.writeText(order.customerUrl);
+      await navigator.clipboard.writeText(text);
       setCopyState("copied");
       await recordCopy(order).catch(() => undefined);
     } catch {
@@ -1989,14 +2011,14 @@ function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; onBusyChange: (bu
 
   async function shareOrder(order: CreatedOrder) {
     if (!canShare) {
-      await copyLink(order);
+      await copyText(order, shareMessage(order));
       return;
     }
     try {
       await navigator.share({ text: shareMessage(order) });
     } catch (reason) {
       if (reason instanceof DOMException && reason.name === "AbortError") return;
-      await copyLink(order);
+      await copyText(order, shareMessage(order));
     }
   }
 
@@ -2049,16 +2071,16 @@ function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; onBusyChange: (bu
       sessionStorage.removeItem(`radif_create_key_${shop.id}`);
       setCreated(order);
       if (reservedCopy && resolveReserved) {
-        resolveReserved(new Blob([order.customerUrl], { type: "text/plain" }));
+        resolveReserved(new Blob([shareMessage(order)], { type: "text/plain" }));
         try {
           await reservedCopy;
           setCopyState("copied");
           await recordCopy(order).catch(() => undefined);
         } catch {
-          await copyLink(order);
+          await copyText(order, shareMessage(order));
         }
       } else {
-        await copyLink(order);
+        await copyText(order, shareMessage(order));
       }
     } catch (reason) {
       rejectReserved?.(reason);
@@ -2118,8 +2140,8 @@ function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; onBusyChange: (bu
         <p className="page-kicker mt-6">{created.orderCode.replace(/\d/g, (digit) => persianDigits[Number(digit)])}</p>
         <h1 className="page-title mt-1">سفارش ساخته شد</h1>
         <p className="mt-3 leading-7 text-ink/70">
-          {copyState === "copied" && "لینک مشتری کپی شد و آماده فرستادن در دایرکت است."}
-          {copyState === "copying" && "در حال کپی‌کردن لینک مشتری…"}
+          {copyState === "copied" && "متن کپی شد و آماده فرستادن در دایرکت است."}
+          {copyState === "copying" && "در حال کپی‌کردن متن…"}
           {copyState === "failed" && "کپی خودکار در این مرورگر انجام نشد. لینک را از کادر زیر کپی کنید."}
         </p>
 
@@ -2166,7 +2188,7 @@ function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; onBusyChange: (bu
             value={created.customerUrl}
             onFocus={(event) => event.currentTarget.select()}
           />
-          <button className="secondary-button mt-3 w-full" type="button" onClick={() => copyLink(created)} disabled={copyState === "copying"}>
+          <button className="secondary-button mt-3 w-full" type="button" onClick={() => copyText(created, created.customerUrl)} disabled={copyState === "copying"}>
             {copyState === "copying" ? <LoaderCircle className="size-5 animate-spin" aria-hidden="true" /> : <Clipboard className="size-5" aria-hidden="true" />}
             {copyState === "copying" ? "در حال کپی…" : "کپی لینک"}
           </button>

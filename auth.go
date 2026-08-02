@@ -162,17 +162,18 @@ func me(db *gorm.DB) echo.HandlerFunc {
 		}
 
 		type publicShop struct {
-			ID                uint   `json:"id"`
-			Name              string `json:"name"`
-			LogoPath          string `json:"logoPath,omitempty"`
-			ShortDescription  string `json:"shortDescription,omitempty"`
-			InstagramUsername string `json:"instagramUsername,omitempty"`
-			WhatsAppNumber    string `json:"whatsappNumber,omitempty"`
-			SupportChannel    string `json:"supportChannel,omitempty"`
+			ID                   uint   `json:"id"`
+			Name                 string `json:"name"`
+			LogoPath             string `json:"logoPath,omitempty"`
+			ShortDescription     string `json:"shortDescription,omitempty"`
+			InstagramUsername    string `json:"instagramUsername,omitempty"`
+			WhatsAppNumber       string `json:"whatsappNumber,omitempty"`
+			SupportChannel       string `json:"supportChannel,omitempty"`
+			ShareMessageTemplate string `json:"shareMessageTemplate,omitempty"`
 		}
 		responseShops := make([]publicShop, len(shops))
 		for i, shop := range shops {
-			responseShops[i] = publicShop{shop.ID, shop.Name, shop.LogoPath, shop.ShortDescription, shop.InstagramUsername, shop.WhatsAppNumber, shop.SupportChannel}
+			responseShops[i] = publicShop{shop.ID, shop.Name, shop.LogoPath, shop.ShortDescription, shop.InstagramUsername, shop.WhatsAppNumber, shop.SupportChannel, shop.ShareMessageTemplate}
 		}
 
 		return c.JSON(http.StatusOK, map[string]any{
@@ -185,9 +186,10 @@ func me(db *gorm.DB) echo.HandlerFunc {
 func updateShopSupport(db *gorm.DB) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		var input struct {
-			InstagramUsername string `json:"instagramUsername"`
-			WhatsAppNumber    string `json:"whatsappNumber"`
-			SupportChannel    string `json:"supportChannel"`
+			InstagramUsername    string  `json:"instagramUsername"`
+			WhatsAppNumber       string  `json:"whatsappNumber"`
+			SupportChannel       string  `json:"supportChannel"`
+			ShareMessageTemplate *string `json:"shareMessageTemplate"`
 		}
 		c.Request().Body = http.MaxBytesReader(c.Response(), c.Request().Body, 16<<10)
 		if err := json.NewDecoder(c.Request().Body).Decode(&input); err != nil {
@@ -213,16 +215,27 @@ func updateShopSupport(db *gorm.DB) echo.HandlerFunc {
 		if channel == "instagram" && instagram == "" || channel == "whatsapp" && whatsapp == "" {
 			return echo.NewHTTPError(http.StatusBadRequest, "اطلاعات راه ارتباطی پیش‌فرض را کامل کنید.")
 		}
-
 		shop := c.Get(shopContextKey).(*Shop)
-		updates := map[string]any{"instagram_username": instagram, "whatsapp_number": whatsapp, "support_channel": channel}
+		template := shop.ShareMessageTemplate
+		if input.ShareMessageTemplate != nil {
+			template = strings.TrimSpace(*input.ShareMessageTemplate)
+		}
+		if len([]rune(template)) > 1000 {
+			return echo.NewHTTPError(http.StatusBadRequest, "متن پیام اشتراک‌گذاری بیش از حد طولانی است.")
+		}
+		if template != "" && !strings.Contains(template, "{customerUrl}") {
+			return echo.NewHTTPError(http.StatusBadRequest, "متن پیام باید شامل {customerUrl} باشد.")
+		}
+
+		updates := map[string]any{"instagram_username": instagram, "whatsapp_number": whatsapp, "support_channel": channel, "share_message_template": template}
 		if err := db.Model(shop).Updates(updates).Error; err != nil {
 			return err
 		}
 		return c.JSON(http.StatusOK, map[string]string{
-			"instagramUsername": instagram,
-			"whatsappNumber":    whatsapp,
-			"supportChannel":    channel,
+			"instagramUsername":    instagram,
+			"whatsappNumber":       whatsapp,
+			"supportChannel":       channel,
+			"shareMessageTemplate": template,
 		})
 	}
 }
