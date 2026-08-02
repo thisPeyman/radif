@@ -346,6 +346,42 @@ COMMIT;
 
 Every manually assigned `logo_path` must exist under `web/public/images` in the locally built app image. Product images uploaded through the application do not require a rebuild or deployment.
 
+## Disk usage and cleanup
+
+Inspect filesystem, application, Docker, and journal usage:
+
+```sh
+df -h
+df -ih
+sudo du -xhd1 /opt/insta-helper | sort -h
+sudo du -xhd1 /var/lib/docker | sort -h
+sudo docker system df -v
+sudo docker ps --size
+sudo journalctl --disk-usage
+cd /opt/insta-helper
+sudo du -sh data/* backups/*
+sudo docker image ls insta-helper
+```
+
+After a successful deployment, remove uploaded release archives and other safe-to-recreate data:
+
+```sh
+sudo rm -f /tmp/insta-helper-*.tar.gz /tmp/insta-helper-*.tar.gz.sha256
+sudo docker image prune
+sudo docker container prune
+sudo apt clean
+sudo journalctl --vacuum-time=14d
+```
+
+Inspect application image tags and remove only obsolete commit-tagged releases:
+
+```sh
+sudo docker image ls insta-helper
+sudo docker image rm insta-helper:OLD_TAG
+```
+
+Keep `insta-helper:current` and `insta-helper:previous` for deployment and rollback. Do not run `docker system prune --volumes`; PostgreSQL data is stored in a Docker volume. Do not delete `data/` or cumulative media backups unless verified copies exist elsewhere.
+
 ## Weekly checklist
 
 Run this once each week because no automated alerting is configured:
