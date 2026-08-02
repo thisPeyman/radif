@@ -401,7 +401,7 @@ func TestOrderOperations(t *testing.T) {
 	}
 }
 
-func TestOrderListDeliveryFilterAndSorting(t *testing.T) {
+func TestOrderListViewsAndSorting(t *testing.T) {
 	db, e, _, _ := newAuthTestServer(t)
 	cookie := loginCookie(t, e)
 	var shop Shop
@@ -411,29 +411,39 @@ func TestOrderListDeliveryFilterAndSorting(t *testing.T) {
 	now := time.Now()
 	today := now.In(iranTime)
 	orders := []Order{
-		{CreateKey: "sort-overdue", CreateFingerprint: "sort-overdue", SecretToken: "sort-overdue", ShopID: shop.ID, Amount: 100, EstimatedDeliveryDate: today.AddDate(0, 0, -1).Format("2006-01-02"), Status: "preparing", CreatedAt: now.Add(-4 * time.Hour)},
-		{CreateKey: "sort-soon", CreateFingerprint: "sort-soon", SecretToken: "sort-soon", ShopID: shop.ID, Amount: 500, EstimatedDeliveryDate: today.AddDate(0, 0, 2).Format("2006-01-02"), Status: "paid", CreatedAt: now.Add(-3 * time.Hour)},
-		{CreateKey: "sort-later", CreateFingerprint: "sort-later", SecretToken: "sort-later", ShopID: shop.ID, Amount: 900, EstimatedDeliveryDate: today.AddDate(0, 0, 8).Format("2006-01-02"), Status: waitingInfoStatus, CreatedAt: now.Add(-2 * time.Hour)},
-		{CreateKey: "sort-shipped", CreateFingerprint: "sort-shipped", SecretToken: "sort-shipped", ShopID: shop.ID, Amount: 700, EstimatedDeliveryDate: today.Format("2006-01-02"), Status: "shipped", CreatedAt: now.Add(-time.Hour)},
+		{CreateKey: "sort-overdue", CreateFingerprint: "sort-overdue", SecretToken: "sort-overdue", ShopID: shop.ID, Amount: 100, EstimatedDeliveryDate: today.AddDate(0, 0, -1).Format("2006-01-02"), Status: "preparing", CreatedAt: now.Add(-4 * time.Hour), UpdatedAt: now.Add(-3 * time.Hour)},
+		{CreateKey: "sort-soon", CreateFingerprint: "sort-soon", SecretToken: "sort-soon", ShopID: shop.ID, Amount: 500, EstimatedDeliveryDate: today.AddDate(0, 0, 2).Format("2006-01-02"), Status: "paid", CreatedAt: now.Add(-3 * time.Hour), UpdatedAt: now.Add(-4 * time.Hour)},
+		{CreateKey: "sort-later", CreateFingerprint: "sort-later", SecretToken: "sort-later", ShopID: shop.ID, Amount: 900, EstimatedDeliveryDate: today.AddDate(0, 0, 8).Format("2006-01-02"), Status: waitingInfoStatus, CreatedAt: now.Add(-2 * time.Hour), UpdatedAt: now.Add(-2 * time.Hour)},
+		{CreateKey: "sort-shipped", CreateFingerprint: "sort-shipped", SecretToken: "sort-shipped", ShopID: shop.ID, Amount: 700, EstimatedDeliveryDate: today.Format("2006-01-02"), InstagramUsername: "archived-search", Status: "shipped", CreatedAt: now.Add(-time.Hour), UpdatedAt: now.Add(-30 * time.Minute)},
+		{CreateKey: "sort-cancelled", CreateFingerprint: "sort-cancelled", SecretToken: "sort-cancelled", ShopID: shop.ID, Amount: 300, EstimatedDeliveryDate: today.Format("2006-01-02"), InstagramUsername: "archived-search", Status: "cancelled", CreatedAt: now.Add(-30 * time.Minute), UpdatedAt: now.Add(-90 * time.Minute)},
 	}
 	if err := db.Create(&orders).Error; err != nil {
 		t.Fatal(err)
 	}
 
-	listIDs := func(query string) []uint {
+	type listOutput struct {
+		Orders []struct {
+			ID        uint      `json:"id"`
+			UpdatedAt time.Time `json:"updatedAt"`
+		} `json:"orders"`
+		HasMore       bool  `json:"hasMore"`
+		ActiveCount   int64 `json:"activeCount"`
+		ArchivedCount int64 `json:"archivedCount"`
+	}
+	list := func(query string) listOutput {
 		t.Helper()
 		response := request(e, http.MethodGet, fmt.Sprintf("/api/orders?shopId=%d%s", shop.ID, query), "", "", cookie)
 		if response.Code != http.StatusOK {
 			t.Fatalf("list returned %d: %s", response.Code, response.Body.String())
 		}
-		var output struct {
-			Orders []struct {
-				ID uint `json:"id"`
-			} `json:"orders"`
-		}
+		var output listOutput
 		if err := json.Unmarshal(response.Body.Bytes(), &output); err != nil {
 			t.Fatal(err)
 		}
+		return output
+	}
+	listIDs := func(query string) []uint {
+		output := list(query)
 		ids := make([]uint, len(output.Orders))
 		for i, order := range output.Orders {
 			ids[i] = order.ID
@@ -445,10 +455,13 @@ func TestOrderListDeliveryFilterAndSorting(t *testing.T) {
 		query string
 		want  []uint
 	}{
-		"due by default": {want: []uint{orders[0].ID, orders[1].ID, orders[2].ID, orders[3].ID}},
-		"due soon":       {query: "&delivery=soon", want: []uint{orders[0].ID, orders[1].ID}},
-		"recent":         {query: "&sort=recent", want: []uint{orders[3].ID, orders[2].ID, orders[1].ID, orders[0].ID}},
-		"amount":         {query: "&sort=amount", want: []uint{orders[2].ID, orders[3].ID, orders[1].ID, orders[0].ID}},
+		"active due by default": {want: []uint{orders[0].ID, orders[1].ID, orders[2].ID}},
+		"recent":                {query: "&sort=recent", want: []uint{orders[2].ID, orders[1].ID, orders[0].ID}},
+		"amount":                {query: "&sort=amount", want: []uint{orders[2].ID, orders[1].ID, orders[0].ID}},
+		"archive updated":       {query: "&view=archive", want: []uint{orders[3].ID, orders[4].ID}},
+		"archive created":       {query: "&view=archive&sort=recent", want: []uint{orders[4].ID, orders[3].ID}},
+		"global search":         {query: "&q=archived-search", want: []uint{orders[3].ID, orders[4].ID}},
+		"search keeps status":   {query: "&q=archived-search&status=preparing", want: []uint{}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if got := listIDs(test.query); fmt.Sprint(got) != fmt.Sprint(test.want) {
@@ -456,10 +469,64 @@ func TestOrderListDeliveryFilterAndSorting(t *testing.T) {
 			}
 		})
 	}
-	for _, query := range []string{"&delivery=later", "&sort=oldest"} {
+	output := list("")
+	if output.ActiveCount != 3 || output.ArchivedCount != 2 || output.HasMore || output.Orders[0].UpdatedAt.IsZero() {
+		t.Fatalf("unexpected list metadata: %#v", output)
+	}
+	for _, query := range []string{"&sort=oldest", "&view=finished", "&offset=-1"} {
 		if response := request(e, http.MethodGet, fmt.Sprintf("/api/orders?shopId=%d%s", shop.ID, query), "", "", cookie); response.Code != http.StatusBadRequest {
 			t.Fatalf("invalid list query %q returned %d", query, response.Code)
 		}
+	}
+}
+
+func TestOrderListPagination(t *testing.T) {
+	db, e, _, _ := newAuthTestServer(t)
+	cookie := loginCookie(t, e)
+	var shop Shop
+	if err := db.First(&shop).Error; err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	orders := make([]Order, 21)
+	for i := range orders {
+		key := fmt.Sprintf("page-%d", i)
+		orders[i] = Order{CreateKey: key, CreateFingerprint: key, SecretToken: key, ShopID: shop.ID, Amount: int64(i + 1), EstimatedDeliveryDate: now.Format("2006-01-02"), Status: "preparing", CreatedAt: now.Add(time.Duration(i) * time.Minute)}
+	}
+	if err := db.Create(&orders).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	page := func(offset int) ([]uint, bool) {
+		t.Helper()
+		response := request(e, http.MethodGet, fmt.Sprintf("/api/orders?shopId=%d&offset=%d", shop.ID, offset), "", "", cookie)
+		if response.Code != http.StatusOK {
+			t.Fatalf("list returned %d: %s", response.Code, response.Body.String())
+		}
+		var output struct {
+			Orders []struct {
+				ID uint `json:"id"`
+			} `json:"orders"`
+			HasMore bool `json:"hasMore"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &output); err != nil {
+			t.Fatal(err)
+		}
+		ids := make([]uint, len(output.Orders))
+		for i, order := range output.Orders {
+			ids[i] = order.ID
+		}
+		return ids, output.HasMore
+	}
+	firstWant := make([]uint, 20)
+	for i := range firstWant {
+		firstWant[i] = orders[20-i].ID
+	}
+	if ids, more := page(0); fmt.Sprint(ids) != fmt.Sprint(firstWant) || !more {
+		t.Fatalf("first page = %v, hasMore %v", ids, more)
+	}
+	if ids, more := page(20); fmt.Sprint(ids) != fmt.Sprint([]uint{orders[0].ID}) || more {
+		t.Fatalf("second page = %v, hasMore %v", ids, more)
 	}
 }
 

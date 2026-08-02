@@ -383,28 +383,62 @@ func listOrders(db *gorm.DB) echo.HandlerFunc {
 		if status != "" && !validOrderStatuses[status] {
 			return echo.NewHTTPError(http.StatusBadRequest, "وضعیت سفارش معتبر نیست.")
 		}
-		delivery := strings.TrimSpace(c.QueryParam("delivery"))
-		if delivery != "" && delivery != "soon" {
-			return echo.NewHTTPError(http.StatusBadRequest, "فیلتر زمان تحویل معتبر نیست.")
+		view := strings.TrimSpace(c.QueryParam("view"))
+		if view == "" {
+			view = "active"
 		}
-		sortBy := strings.TrimSpace(c.QueryParam("sort"))
-		if sortBy == "" {
-			sortBy = "due"
-		}
-		if sortBy != "due" && sortBy != "recent" && sortBy != "amount" {
-			return echo.NewHTTPError(http.StatusBadRequest, "ترتیب سفارش‌ها معتبر نیست.")
+		if view != "active" && view != "archive" && view != "all" {
+			return echo.NewHTTPError(http.StatusBadRequest, "نمای سفارش‌ها معتبر نیست.")
 		}
 		search := strings.TrimSpace(c.QueryParam("q"))
 		if len([]rune(search)) > 100 {
 			return echo.NewHTTPError(http.StatusBadRequest, "عبارت جستجو بیش از حد طولانی است.")
 		}
+		if search != "" {
+			view = "all"
+		}
+		sortBy := strings.TrimSpace(c.QueryParam("sort"))
+		if sortBy == "" {
+			if view == "active" {
+				sortBy = "due"
+			} else {
+				sortBy = "updated"
+			}
+		}
+		if sortBy != "due" && sortBy != "updated" && sortBy != "recent" && sortBy != "amount" {
+			return echo.NewHTTPError(http.StatusBadRequest, "ترتیب سفارش‌ها معتبر نیست.")
+		}
+		offset := 0
+		if value := strings.TrimSpace(c.QueryParam("offset")); value != "" {
+			offset, err = strconv.Atoi(value)
+			if err != nil || offset < 0 {
+				return echo.NewHTTPError(http.StatusBadRequest, "صفحه سفارش‌ها معتبر نیست.")
+			}
+		}
+		var counts []struct {
+			Status string
+			Count  int64
+		}
+		if err := db.Model(&Order{}).Select("status, COUNT(*) AS count").Where("shop_id = ?", shop.ID).Group("status").Scan(&counts).Error; err != nil {
+			return err
+		}
+		var activeCount, archivedCount int64
+		for _, count := range counts {
+			if count.Status == "shipped" || count.Status == "cancelled" {
+				archivedCount += count.Count
+			} else {
+				activeCount += count.Count
+			}
+		}
 		query := db.Preload("Items.Product").Where("shop_id = ?", shop.ID)
+		switch view {
+		case "active":
+			query = query.Where("status NOT IN ?", []string{"shipped", "cancelled"})
+		case "archive":
+			query = query.Where("status IN ?", []string{"shipped", "cancelled"})
+		}
 		if status != "" {
 			query = query.Where("status = ?", status)
-		}
-		if delivery == "soon" {
-			through := time.Now().In(iranTime).AddDate(0, 0, 7).Format("2006-01-02")
-			query = query.Where("status NOT IN ? AND estimated_delivery_date <= ?", []string{"shipped", "cancelled"}, through)
 		}
 		if search != "" {
 			escaped := strings.NewReplacer("\\", "\\\\", "%", "\\%", "_", "\\_").Replace(search)
@@ -427,13 +461,19 @@ func listOrders(db *gorm.DB) echo.HandlerFunc {
 		switch sortBy {
 		case "due":
 			query = query.Order("CASE WHEN status IN ('shipped', 'cancelled') THEN 1 ELSE 0 END, estimated_delivery_date ASC, created_at DESC, id DESC")
+		case "updated":
+			query = query.Order("updated_at DESC, id DESC")
 		case "amount":
 			query = query.Order("amount DESC, created_at DESC, id DESC")
 		default:
 			query = query.Order("created_at DESC, id DESC")
 		}
-		if err := query.Limit(100).Find(&orders).Error; err != nil {
+		if err := query.Offset(offset).Limit(21).Find(&orders).Error; err != nil {
 			return err
+		}
+		hasMore := len(orders) > 20
+		if hasMore {
+			orders = orders[:20]
 		}
 		type orderSummary struct {
 			ID                    uint      `json:"id"`
@@ -447,6 +487,7 @@ func listOrders(db *gorm.DB) echo.HandlerFunc {
 			Status                string    `json:"status"`
 			EstimatedDeliveryDate string    `json:"estimatedDeliveryDate"`
 			CreatedAt             time.Time `json:"createdAt"`
+			UpdatedAt             time.Time `json:"updatedAt"`
 		}
 		response := make([]orderSummary, len(orders))
 		for i, order := range orders {
@@ -461,10 +502,10 @@ func listOrders(db *gorm.DB) echo.HandlerFunc {
 				ID: order.ID, OrderCode: fmt.Sprintf("#%d", order.ID), ProductSummary: productSummary,
 				CustomerFullName: order.CustomerFullName, CustomerSubmitted: order.CustomerSubmittedAt != nil,
 				ReceiptUploaded: order.ReceiptFilePath != "", HasTrackingCode: order.ShipmentTrackingCode != "",
-				Amount: order.Amount, Status: order.Status, EstimatedDeliveryDate: order.EstimatedDeliveryDate, CreatedAt: order.CreatedAt,
+				Amount: order.Amount, Status: order.Status, EstimatedDeliveryDate: order.EstimatedDeliveryDate, CreatedAt: order.CreatedAt, UpdatedAt: order.UpdatedAt,
 			}
 		}
-		return c.JSON(http.StatusOK, map[string]any{"orders": response})
+		return c.JSON(http.StatusOK, map[string]any{"orders": response, "hasMore": hasMore, "activeCount": activeCount, "archivedCount": archivedCount})
 	}
 }
 
