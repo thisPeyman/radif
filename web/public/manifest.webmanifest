@@ -5,7 +5,7 @@
   "lang": "fa",
   "dir": "rtl",
   "id": "/",
-  "start_url": "/",
+  "start_url": "/orders/new",
   "scope": "/",
   "display": "standalone",
   "background_color": "#f7f9f8",

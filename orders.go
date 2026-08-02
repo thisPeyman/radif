@@ -22,7 +22,7 @@ import (
 const (
 	waitingInfoStatus    = "waiting_info"
 	waitingPaymentStatus = "waiting_payment"
-	staleWaitingInfoAge  = 7 * 24 * time.Hour
+	staleWaitingInfoAge  = 2 * 24 * time.Hour
 )
 
 var validOrderStatuses = map[string]bool{
@@ -162,7 +162,7 @@ func createOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 			return tx.Create(&events).Error
 		})
 		if errors.Is(err, errOrderAlreadyCreated) {
-		err := db.Preload("Items").Joins("JOIN shops ON shops.id = orders.shop_id").Joins("JOIN admin_shops ON admin_shops.shop_id = shops.id AND admin_shops.admin_id = ?", admin.ID).Where("orders.create_key = ?", input.CreateKey).First(&existing).Error
+			err := db.Preload("Items").Joins("JOIN shops ON shops.id = orders.shop_id").Joins("JOIN admin_shops ON admin_shops.shop_id = shops.id AND admin_shops.admin_id = ?", admin.ID).Where("orders.create_key = ?", input.CreateKey).First(&existing).Error
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return echo.NewHTTPError(http.StatusConflict, "شناسه ساخت سفارش قبلاً استفاده شده است.")
 			}
