@@ -96,7 +96,7 @@ On the local computer, get the tag and upload both release files:
 
 ```sh
 TAG=$(git describe --always --dirty)
-rsync -avP "dist/insta-helper-$TAG.tar.gz" "dist/insta-helper-$TAG.tar.gz.sha256" "$SERVER_USER@$SERVER:/tmp/"
+rsync -avP "dist/insta-helper-$TAG.tar.gz" "dist/insta-helper-$TAG.tar.gz.sha256" "insta-helper:/tmp/"
 ```
 
 On the VPS:

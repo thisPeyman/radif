@@ -288,9 +288,31 @@ function DeliveryDateSelect({ id, value, onChange, invalid, describedBy }: { id:
   );
 }
 
+async function optimizeReceipt(file: File) {
+  if (file.size <= 512 * 1024) return file;
+
+  const source = URL.createObjectURL(file);
+  try {
+    const image = await loadImage(source);
+    const scale = Math.min(1, 2000 / Math.max(image.naturalWidth, image.naturalHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const context = canvas.getContext("2d");
+    if (!context) return file;
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", 0.82));
+    if (!blob || blob.size >= file.size) return file;
+    return new File([blob], "receipt.webp", { type: blob.type, lastModified: Date.now() });
+  } finally {
+    URL.revokeObjectURL(source);
+  }
+}
+
 function ReceiptPicker({ id, file, onChange }: { id: string; file: File | null; onChange: (file: File | null) => void }) {
   const input = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState("");
+  const [optimizing, setOptimizing] = useState(false);
 
   useEffect(() => {
     if (!file) {
@@ -303,10 +325,28 @@ function ReceiptPicker({ id, file, onChange }: { id: string; file: File | null; 
     return () => URL.revokeObjectURL(url);
   }, [file]);
 
+  async function choose(selected?: File) {
+    if (!selected) return;
+    onChange(null);
+    setOptimizing(true);
+    try {
+      onChange(await optimizeReceipt(selected));
+    } catch {
+      onChange(selected);
+    } finally {
+      setOptimizing(false);
+    }
+  }
+
   return (
     <div>
-      <input ref={input} id={id} className="hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => onChange(event.target.files?.[0] ?? null)} />
-      {!file ? (
+      <input ref={input} id={id} className="hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => { const selected = event.target.files?.[0]; event.target.value = ""; void choose(selected); }} />
+      {optimizing ? (
+        <div className="flex min-h-24 items-center justify-center gap-2 rounded-2xl border border-teal/30 bg-teal/5 text-sm font-bold text-ink/70" role="status">
+          <LoaderCircle className="size-5 animate-spin text-teal" aria-hidden="true" />
+          در حال آماده‌سازی تصویر…
+        </div>
+      ) : !file ? (
         <button className="secondary-button w-full" type="button" onClick={() => input.current?.click()}>
           <Upload className="size-5" aria-hidden="true" />
           انتخاب تصویر رسید
