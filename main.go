@@ -137,6 +137,7 @@ func newServer(db *gorm.DB, cfg config) *echo.Echo {
 	e.GET("/api/me", me(db), requireAdmin(db, cfg))
 	e.GET("/api/product-images/:file", getProductImage(cfg))
 	e.GET("/api/shops/:shopID/products", products(db), requireAdmin(db, cfg), requireShopAccess(db))
+	e.PATCH("/api/shops/:shopID/support", updateShopSupport(db), requireAdmin(db, cfg), requireShopAccess(db), origin)
 	e.POST("/api/shops/:shopID/products", createProduct(db, cfg), requireAdmin(db, cfg), requireShopAccess(db), origin)
 	e.PATCH("/api/shops/:shopID/products/:productID", updateProduct(db, cfg), requireAdmin(db, cfg), requireShopAccess(db), origin)
 	e.DELETE("/api/shops/:shopID/products/:productID", archiveProduct(db), requireAdmin(db, cfg), requireShopAccess(db), origin)
@@ -148,6 +149,7 @@ func newServer(db *gorm.DB, cfg config) *echo.Echo {
 	e.GET("/api/orders/:orderID/receipt", getOrderReceipt(db, cfg), requireAdmin(db, cfg))
 	e.POST("/api/orders/:orderID/link-copied", recordLinkCopied(db), requireAdmin(db, cfg), origin)
 	e.GET("/api/o/:token", publicOrder(db))
+	e.POST("/api/o/:token/support-click", recordPublicSupportClick(db), origin)
 	e.POST("/api/o/:token/details", submitCustomerDetails(db, cfg), origin)
 
 	e.Use(middleware.StaticWithConfig(middleware.StaticConfig{

@@ -116,6 +116,9 @@ func TestCreateOrderAndRecordCopy(t *testing.T) {
 	if body := publicResponse.Body.String(); strings.Contains(body, "internalNote") || strings.Contains(body, "customerMobile") || strings.Contains(body, "test") {
 		t.Fatalf("public order exposed private data: %s", body)
 	}
+	if strings.Contains(publicResponse.Body.String(), `"support"`) {
+		t.Fatalf("public order exposed an unconfigured support action: %s", publicResponse.Body.String())
+	}
 	retry := request(e, http.MethodPost, "/api/orders", body, testOrigin, cookie)
 	if retry.Code != http.StatusCreated {
 		t.Fatalf("idempotent retry returned %d: %s", retry.Code, retry.Body.String())
@@ -156,6 +159,75 @@ func TestCreateOrderAndRecordCopy(t *testing.T) {
 	}
 	if err := db.Model(&PilotEvent{}).Where("order_id = ? AND event_name = ?", order.ID, "order_link_copied").Count(&eventCount).Error; err != nil || eventCount != 1 {
 		t.Fatalf("copy event count = %d, error %v", eventCount, err)
+	}
+}
+
+func TestPublicSupportRecovery(t *testing.T) {
+	db, e, _, _ := newAuthTestServer(t)
+	order := createCustomerTestOrder(t, db, "support-recovery-token")
+	if err := db.Model(&Shop{}).Where("id = ?", order.ShopID).Updates(map[string]any{
+		"whatsapp_number": "989123456789", "support_channel": "whatsapp",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	type supportResponse struct {
+		Support struct {
+			Channel string `json:"channel"`
+			URL     string `json:"url"`
+			Message string `json:"message"`
+		} `json:"support"`
+	}
+	getSupport := func() supportResponse {
+		t.Helper()
+		response := request(e, http.MethodGet, "/api/o/"+order.SecretToken, "", "", nil)
+		if response.Code != http.StatusOK {
+			t.Fatalf("public support returned %d: %s", response.Code, response.Body.String())
+		}
+		var output supportResponse
+		if err := json.Unmarshal(response.Body.Bytes(), &output); err != nil {
+			t.Fatal(err)
+		}
+		return output
+	}
+
+	before := getSupport()
+	if before.Support.Channel != "whatsapp" || !strings.HasPrefix(before.Support.URL, "https://wa.me/989123456789?text=") || !strings.Contains(before.Support.Message, "سوال دارم") {
+		t.Fatalf("unexpected pre-submission support: %#v", before.Support)
+	}
+	click := request(e, http.MethodPost, "/api/o/"+order.SecretToken+"/support-click", "", testOrigin, nil)
+	if click.Code != http.StatusNoContent {
+		t.Fatalf("support click returned %d: %s", click.Code, click.Body.String())
+	}
+	var event PilotEvent
+	if err := db.First(&event, "order_id = ? AND event_name = ?", order.ID, "public_support_clicked").Error; err != nil || !strings.Contains(event.Metadata, `"action":"message_shop"`) || !strings.Contains(event.Metadata, `"channel":"whatsapp"`) {
+		t.Fatalf("unexpected support event: %#v, error %v", event, err)
+	}
+
+	now := time.Now()
+	if err := db.Model(&order).Updates(map[string]any{"customer_submitted_at": now, "status": waitingPaymentStatus}).Error; err != nil {
+		t.Fatal(err)
+	}
+	after := getSupport()
+	if !strings.Contains(after.Support.Message, "اصلاح اطلاعات") {
+		t.Fatalf("unexpected correction message: %#v", after.Support)
+	}
+	click = request(e, http.MethodPost, "/api/o/"+order.SecretToken+"/support-click", "", testOrigin, nil)
+	if click.Code != http.StatusNoContent {
+		t.Fatalf("correction click returned %d: %s", click.Code, click.Body.String())
+	}
+	event = PilotEvent{}
+	if err := db.Where("order_id = ? AND event_name = ?", order.ID, "public_support_clicked").Order("id DESC").First(&event).Error; err != nil || !strings.Contains(event.Metadata, `"action":"correction_request"`) {
+		t.Fatalf("unexpected correction event: %#v, error %v", event, err)
+	}
+	if err := db.Model(&Shop{}).Where("id = ?", order.ShopID).Updates(map[string]any{
+		"instagram_username": "blue.shop", "support_channel": "instagram",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	instagram := getSupport()
+	if instagram.Support.Channel != "instagram" || instagram.Support.URL != "https://ig.me/m/blue.shop" || instagram.Support.Message == "" {
+		t.Fatalf("unexpected Instagram support: %#v", instagram.Support)
 	}
 }
 
@@ -277,12 +349,12 @@ func TestOrderOperations(t *testing.T) {
 	if detail.Code != http.StatusOK || !strings.Contains(detail.Body.String(), cfg.appOrigin+"/o/"+order.SecretToken) || !strings.Contains(detail.Body.String(), "customerPostalCode") || !strings.Contains(detail.Body.String(), "history") {
 		t.Fatalf("detail returned %d: %s", detail.Code, detail.Body.String())
 	}
-	update := `{"status":"paid","shipmentTrackingCode":" TRACK-123 ","customerFullName":"سارا محمدی","customerMobile":"+98 912 345 6789","customerAddress":"نشانی اصلاح‌شده","customerPostalCode":"۱۲۳۴۵۶۷۸۹۰","customerNote":"یادداشت جدید"}`
+	update := `{"status":"paid","shipmentTrackingCode":" TRACK-123 ","customerFullName":"سارا محمدی","customerMobile":"+98 912 345 6789","customerAddress":"نشانی اصلاح‌شده","customerPostalCode":"۱۲۳۴۵۶۷۸۹۰","customerNote":"یادداشت جدید","instagramUsername":" @sara.new ","internalNote":" یادداشت داخلی جدید "}`
 	response := request(e, http.MethodPatch, fmt.Sprintf("/api/orders/%d", order.ID), update, testOrigin, cookie)
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"status":"paid"`) || !strings.Contains(response.Body.String(), `"shipmentTrackingCode":"TRACK-123"`) || !strings.Contains(response.Body.String(), "سارا محمدی") {
 		t.Fatalf("operation update returned %d: %s", response.Code, response.Body.String())
 	}
-	if err := db.First(&order, order.ID).Error; err != nil || order.Status != "paid" || order.CustomerMobile != "09123456789" || order.ShipmentTrackingCode != "TRACK-123" {
+	if err := db.First(&order, order.ID).Error; err != nil || order.Status != "paid" || order.CustomerMobile != "09123456789" || order.ShipmentTrackingCode != "TRACK-123" || order.InstagramUsername != "sara.new" || order.InternalNote != "یادداشت داخلی جدید" {
 		t.Fatalf("unexpected updated order: %#v, error %v", order, err)
 	}
 	var latest OrderStatusHistory

@@ -32,6 +32,9 @@ type Shop struct {
 	ShortDescription    string
 	PaymentCardNumber   string `gorm:"not null"`
 	PaymentInstructions string `gorm:"not null"`
+	InstagramUsername   string `gorm:"not null"`
+	WhatsAppNumber      string `gorm:"column:whatsapp_number;not null"`
+	SupportChannel      string `gorm:"not null"`
 	Active              bool   `gorm:"not null;index"`
 	CreatedAt           time.Time
 	UpdatedAt           time.Time

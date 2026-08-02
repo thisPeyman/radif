@@ -162,14 +162,17 @@ func me(db *gorm.DB) echo.HandlerFunc {
 		}
 
 		type publicShop struct {
-			ID               uint   `json:"id"`
-			Name             string `json:"name"`
-			LogoPath         string `json:"logoPath,omitempty"`
-			ShortDescription string `json:"shortDescription,omitempty"`
+			ID                uint   `json:"id"`
+			Name              string `json:"name"`
+			LogoPath          string `json:"logoPath,omitempty"`
+			ShortDescription  string `json:"shortDescription,omitempty"`
+			InstagramUsername string `json:"instagramUsername,omitempty"`
+			WhatsAppNumber    string `json:"whatsappNumber,omitempty"`
+			SupportChannel    string `json:"supportChannel,omitempty"`
 		}
 		responseShops := make([]publicShop, len(shops))
 		for i, shop := range shops {
-			responseShops[i] = publicShop{shop.ID, shop.Name, shop.LogoPath, shop.ShortDescription}
+			responseShops[i] = publicShop{shop.ID, shop.Name, shop.LogoPath, shop.ShortDescription, shop.InstagramUsername, shop.WhatsAppNumber, shop.SupportChannel}
 		}
 
 		return c.JSON(http.StatusOK, map[string]any{
@@ -177,6 +180,63 @@ func me(db *gorm.DB) echo.HandlerFunc {
 			"shops": responseShops,
 		})
 	}
+}
+
+func updateShopSupport(db *gorm.DB) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		var input struct {
+			InstagramUsername string `json:"instagramUsername"`
+			WhatsAppNumber    string `json:"whatsappNumber"`
+			SupportChannel    string `json:"supportChannel"`
+		}
+		c.Request().Body = http.MaxBytesReader(c.Response(), c.Request().Body, 16<<10)
+		if err := json.NewDecoder(c.Request().Body).Decode(&input); err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "اطلاعات تماس معتبر نیست.")
+		}
+
+		instagram := strings.TrimPrefix(strings.TrimSpace(input.InstagramUsername), "@")
+		if instagram != "" && !validInstagramUsername(instagram) {
+			return echo.NewHTTPError(http.StatusBadRequest, "نام کاربری اینستاگرام معتبر نیست.")
+		}
+		whatsapp := ""
+		if strings.TrimSpace(input.WhatsAppNumber) != "" {
+			mobile := normalizeIranianMobile(input.WhatsAppNumber)
+			if len(mobile) != 11 || !strings.HasPrefix(mobile, "09") {
+				return echo.NewHTTPError(http.StatusBadRequest, "شماره واتساپ معتبر ایرانی وارد کنید.")
+			}
+			whatsapp = "98" + mobile[1:]
+		}
+		channel := strings.TrimSpace(input.SupportChannel)
+		if channel != "" && channel != "instagram" && channel != "whatsapp" {
+			return echo.NewHTTPError(http.StatusBadRequest, "راه ارتباطی پیش‌فرض معتبر نیست.")
+		}
+		if channel == "instagram" && instagram == "" || channel == "whatsapp" && whatsapp == "" {
+			return echo.NewHTTPError(http.StatusBadRequest, "اطلاعات راه ارتباطی پیش‌فرض را کامل کنید.")
+		}
+
+		shop := c.Get(shopContextKey).(*Shop)
+		updates := map[string]any{"instagram_username": instagram, "whatsapp_number": whatsapp, "support_channel": channel}
+		if err := db.Model(shop).Updates(updates).Error; err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, map[string]string{
+			"instagramUsername": instagram,
+			"whatsappNumber":    whatsapp,
+			"supportChannel":    channel,
+		})
+	}
+}
+
+func validInstagramUsername(value string) bool {
+	if len(value) > 30 {
+		return false
+	}
+	for _, r := range value {
+		if r != '.' && r != '_' && (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') {
+			return false
+		}
+	}
+	return value != ""
 }
 
 func requireAdmin(db *gorm.DB, cfg config) echo.MiddlewareFunc {

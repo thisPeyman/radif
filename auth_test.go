@@ -205,3 +205,34 @@ func TestShopAccess(t *testing.T) {
 		t.Errorf("shared shop access returned %d, want %d", response.Code, http.StatusNoContent)
 	}
 }
+
+func TestUpdateShopSupport(t *testing.T) {
+	db, e, _, _ := newAuthTestServer(t)
+	cookie := loginCookie(t, e)
+	var shop Shop
+	if err := db.First(&shop).Error; err != nil {
+		t.Fatal(err)
+	}
+	path := fmt.Sprintf("/api/shops/%d/support", shop.ID)
+
+	if response := request(e, http.MethodPatch, path, `{"whatsappNumber":"۰۹۱۲ ۳۴۵ ۶۷۸۹","supportChannel":"whatsapp"}`, "https://wrong.test", cookie); response.Code != http.StatusForbidden {
+		t.Fatalf("wrong origin returned %d", response.Code)
+	}
+	if response := request(e, http.MethodPatch, path, `{"supportChannel":"instagram"}`, testOrigin, cookie); response.Code != http.StatusBadRequest {
+		t.Fatalf("missing selected contact returned %d: %s", response.Code, response.Body.String())
+	}
+	response := request(e, http.MethodPatch, path, `{"instagramUsername":" @blue.shop ","whatsappNumber":"۰۹۱۲ ۳۴۵ ۶۷۸۹","supportChannel":"whatsapp"}`, testOrigin, cookie)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"whatsappNumber":"989123456789"`) {
+		t.Fatalf("support update returned %d: %s", response.Code, response.Body.String())
+	}
+	if err := db.First(&shop, shop.ID).Error; err != nil || shop.InstagramUsername != "blue.shop" || shop.WhatsAppNumber != "989123456789" || shop.SupportChannel != "whatsapp" {
+		t.Fatalf("unexpected stored support: %#v, error %v", shop, err)
+	}
+	meResponse := request(e, http.MethodGet, "/api/me", "", "", cookie)
+	if meResponse.Code != http.StatusOK || !strings.Contains(meResponse.Body.String(), `"supportChannel":"whatsapp"`) {
+		t.Fatalf("me did not include support settings: %s", meResponse.Body.String())
+	}
+	if response := request(e, http.MethodPatch, "/api/shops/999999/support", `{}`, testOrigin, cookie); response.Code != http.StatusNotFound {
+		t.Fatalf("unowned shop update returned %d", response.Code)
+	}
+}

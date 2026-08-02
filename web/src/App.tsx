@@ -45,6 +45,9 @@ type Shop = {
   name: string;
   logoPath?: string;
   shortDescription?: string;
+  instagramUsername?: string;
+  whatsappNumber?: string;
+  supportChannel?: "instagram" | "whatsapp";
 };
 
 type Me = {
@@ -91,6 +94,7 @@ type PublicOrder = {
   updatedAt: string;
   history: { status: string; createdAt: string }[];
   customerSummary?: { fullName: string; mobile: string; addressPreview: string; postalCodeSuffix: string };
+  support?: { channel: "instagram" | "whatsapp"; url: string; message: string };
 };
 
 type OrderSummary = {
@@ -768,9 +772,45 @@ function OrdersPage({ shop }: { shop: Shop }) {
   );
 }
 
-function AccountPage({ me, onLogout }: { me: Me; onLogout: () => Promise<void> }) {
+function AccountPage({ me, shop, onShopUpdated, onLogout }: { me: Me; shop: Shop; onShopUpdated: (shop: Shop) => void; onLogout: () => Promise<void> }) {
   const [pending, setPending] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [saved, setSaved] = useState(false);
+  const [instagramUsername, setInstagramUsername] = useState(shop.instagramUsername ?? "");
+  const [whatsappNumber, setWhatsappNumber] = useState(shop.whatsappNumber ? `+${shop.whatsappNumber}` : "");
+  const [supportChannel, setSupportChannel] = useState(shop.supportChannel ?? "");
+
+  useEffect(() => {
+    setInstagramUsername(shop.instagramUsername ?? "");
+    setWhatsappNumber(shop.whatsappNumber ? `+${shop.whatsappNumber}` : "");
+    setSupportChannel(shop.supportChannel ?? "");
+    setSaved(false);
+    setError("");
+  }, [shop.id]);
+
+  async function saveSupport(event: FormEvent) {
+    event.preventDefault();
+    setSaving(true);
+    setSaved(false);
+    setError("");
+    try {
+      const support = await api<{ instagramUsername?: string; whatsappNumber?: string; supportChannel?: "instagram" | "whatsapp" }>(`/api/shops/${shop.id}/support`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ instagramUsername, whatsappNumber, supportChannel }),
+      });
+      onShopUpdated({ ...shop, ...support });
+      setInstagramUsername(support.instagramUsername ?? "");
+      setWhatsappNumber(support.whatsappNumber ? `+${support.whatsappNumber}` : "");
+      setSupportChannel(support.supportChannel ?? "");
+      setSaved(true);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "اطلاعات تماس ذخیره نشد.");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function logout() {
     setPending(true);
@@ -794,6 +834,31 @@ function AccountPage({ me, onLogout }: { me: Me; onLogout: () => Promise<void> }
         <p className="text-xs font-bold text-ink/70">فروشگاه‌های فعال</p>
         <p className="mt-1 font-bold">{persianNumber(me.shops.length)} فروشگاه</p>
       </div>
+      <form className="mt-5 rounded-3xl border border-ledger bg-white p-5 shadow-sm" onSubmit={saveSupport}>
+        <h2 className="font-black">راه ارتباطی مشتریان</h2>
+        <p className="mt-1 text-sm leading-7 text-ink/70">مشتری برای پرسش یا اصلاح سفارش از راه انتخاب‌شده به شما پیام می‌دهد.</p>
+        <label className="mt-5 block">
+          <span className="mb-2 block text-sm font-bold">نام کاربری اینستاگرام</span>
+          <input className="field" dir="ltr" placeholder="shopname" value={instagramUsername} onChange={(event) => { setInstagramUsername(event.target.value); setSaved(false); }} />
+        </label>
+        <label className="mt-4 block">
+          <span className="mb-2 block text-sm font-bold">شماره واتساپ</span>
+          <input className="field" type="tel" inputMode="tel" dir="ltr" placeholder="09123456789" value={whatsappNumber} onChange={(event) => { setWhatsappNumber(event.target.value); setSaved(false); }} />
+        </label>
+        <label className="mt-4 block">
+          <span className="mb-2 block text-sm font-bold">راه پیش‌فرض</span>
+          <select className="field" value={supportChannel} onChange={(event) => { setSupportChannel(event.target.value as "" | "instagram" | "whatsapp"); setSaved(false); }}>
+            <option value="">نمایش ندادن راه ارتباطی</option>
+            <option value="instagram">اینستاگرام</option>
+            <option value="whatsapp">واتساپ</option>
+          </select>
+        </label>
+        {saved && <p className="mt-4 text-sm font-bold text-teal" role="status">اطلاعات تماس ذخیره شد.</p>}
+        <button className="primary-button mt-5 w-full" type="submit" disabled={saving}>
+          {saving ? <LoaderCircle className="size-5 animate-spin" /> : <Check className="size-5" />}
+          {saving ? "در حال ذخیره…" : "ذخیره راه ارتباطی"}
+        </button>
+      </form>
       {error && <div className="mt-4"><ErrorNotice>{error}</ErrorNotice></div>}
       <button className="secondary-button mt-6 w-full text-error" type="button" onClick={logout} disabled={pending}>
         {pending ? <LoaderCircle className="size-5 animate-spin" /> : <LogOut className="size-5" />}
@@ -1220,6 +1285,31 @@ function PublicOrderPage() {
     }
   }
 
+  function supportClicked() {
+    if (!order?.support) return;
+    if (order.support.channel === "instagram" && navigator.clipboard) void navigator.clipboard.writeText(order.support.message).catch(() => undefined);
+    const endpoint = `/api/o/${encodeURIComponent(token)}/support-click`;
+    try {
+      if (navigator.sendBeacon(endpoint)) return;
+    } catch {
+      // External navigation must continue even when telemetry is unavailable.
+    }
+    void fetch(endpoint, { method: "POST", keepalive: true }).catch(() => undefined);
+  }
+
+  function supportAction(label: string) {
+    if (!order?.support) return null;
+    return (
+      <div className="mt-5">
+        <a className="secondary-button w-full" href={order.support.url} target="_blank" rel="noreferrer" onClick={supportClicked}>
+          <MessageCircle className="size-5" aria-hidden="true" />
+          {label}
+        </a>
+        {order.support.channel === "instagram" && <p className="mt-2 text-center text-xs text-ink/60">متن پیام کپی می‌شود و اینستاگرام باز می‌شود.</p>}
+      </div>
+    );
+  }
+
   return (
     <div className="app-viewport min-h-dvh px-5 pb-10 pt-[max(1.5rem,env(safe-area-inset-top))] text-ink sm:min-h-[760px] sm:px-6">
       <a className="inline-flex min-h-11 items-center gap-1.5 text-xs font-bold text-ink/60 no-underline transition-colors hover:text-teal" href="/" target="_blank" rel="noreferrer" aria-label="درباره ردیف">
@@ -1296,6 +1386,7 @@ function PublicOrderPage() {
               <div>
                 <h2 className="text-xl font-black">اطلاعات تحویل</h2>
                 <p className="mt-1 text-sm leading-7 text-ink/70">پس از ثبت، اطلاعات برای شما قفل می‌شود و فروشگاه سفارش را بررسی می‌کند.</p>
+                {supportAction("پیام به فروشگاه")}
               </div>
               <label className="block" htmlFor="customer-name">
                 <span className="mb-2 block text-sm font-bold">نام و نام خانوادگی</span>
@@ -1339,6 +1430,7 @@ function PublicOrderPage() {
             <section className="mt-7 rounded-3xl border border-error/25 bg-error/8 p-5">
               <h2 className="font-black">ثبت اطلاعات این سفارش بسته شده است</h2>
               <p className="mt-2 text-sm leading-7 text-ink/70">برای پیگیری یا اصلاح سفارش با فروشگاه تماس بگیرید.</p>
+              {supportAction("پیام به فروشگاه")}
             </section>
           )}
 
@@ -1357,6 +1449,7 @@ function PublicOrderPage() {
                   {order.customerSummary.postalCodeSuffix && <div><dt className="text-xs font-bold text-ink/60">پایان کد پستی</dt><dd className="mt-1 font-bold" dir="ltr">••••••{order.customerSummary.postalCodeSuffix}</dd></div>}
                 </dl>
               )}
+              {supportAction("درخواست اصلاح اطلاعات")}
             </section>
           )}
 
@@ -1411,9 +1504,12 @@ function AdminOrderPage() {
   const [status, setStatus] = useState("");
   const [tracking, setTracking] = useState("");
   const [customer, setCustomer] = useState<CustomerDraft>(emptyCustomerDraft);
+  const [instagramUsername, setInstagramUsername] = useState("");
+  const [internalNote, setInternalNote] = useState("");
   const [editingCustomer, setEditingCustomer] = useState(false);
+  const [editingInternal, setEditingInternal] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState<"" | "status" | "date" | "tracking" | "customer">("");
+  const [saving, setSaving] = useState<"" | "status" | "date" | "tracking" | "customer" | "internal">("");
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -1428,6 +1524,8 @@ function AdminOrderPage() {
         setStatus(response.status);
         setTracking(response.shipmentTrackingCode);
         setCustomer({ fullName: response.customerFullName, mobile: response.customerMobile, address: response.customerAddress, postalCode: response.customerPostalCode, note: response.customerNote });
+        setInstagramUsername(response.instagramUsername);
+        setInternalNote(response.internalNote);
       })
       .catch((reason) => {
         if (reason instanceof DOMException && reason.name === "AbortError") return;
@@ -1437,7 +1535,7 @@ function AdminOrderPage() {
     return () => controller.abort();
   }, [orderID]);
 
-  async function saveChanges(section: "status" | "date" | "tracking" | "customer", changes: Record<string, string>) {
+  async function saveChanges(section: "status" | "date" | "tracking" | "customer" | "internal", changes: Record<string, string>) {
     if (!order) return;
     setSaving(section);
     setError("");
@@ -1452,7 +1550,10 @@ function AdminOrderPage() {
       setStatus(response.status);
       setTracking(response.shipmentTrackingCode);
       setCustomer({ fullName: response.customerFullName, mobile: response.customerMobile, address: response.customerAddress, postalCode: response.customerPostalCode, note: response.customerNote });
+      setInstagramUsername(response.instagramUsername);
+      setInternalNote(response.internalNote);
       if (section === "customer") setEditingCustomer(false);
+      if (section === "internal") setEditingInternal(false);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "تغییرات ذخیره نشد.");
     } finally {
@@ -1475,6 +1576,12 @@ function AdminOrderPage() {
     if (!order) return;
     setCustomer({ fullName: order.customerFullName, mobile: order.customerMobile, address: order.customerAddress, postalCode: order.customerPostalCode, note: order.customerNote });
     setEditingCustomer(false);
+  }
+
+  function cancelInternalEdit() {
+    setInstagramUsername(order?.instagramUsername ?? "");
+    setInternalNote(order?.internalNote ?? "");
+    setEditingInternal(false);
   }
 
   if (loading) return <div className="grid min-h-[65dvh] place-items-center"><LoaderCircle className="size-7 animate-spin text-teal" aria-label="در حال دریافت سفارش" /></div>;
@@ -1545,9 +1652,16 @@ function AdminOrderPage() {
       </section>
 
       <section className="mt-5 rounded-3xl border border-saffron/40 bg-saffron/8 p-5">
-        <h2 className="font-black">اطلاعات داخلی</h2>
-        <div className="mt-3 text-sm"><p className="text-xs font-bold text-ink/60">اینستاگرام</p><p className="mt-1 font-bold" dir="ltr">{order.instagramUsername ? `@${order.instagramUsername}` : "ثبت نشده"}</p></div>
-        <div className="mt-4"><p className="text-xs font-bold text-ink/60">یادداشت داخلی</p><p className="mt-1 whitespace-pre-wrap text-sm leading-7">{order.internalNote || "یادداشتی ثبت نشده است."}</p></div>
+        <div className="flex items-center justify-between"><h2 className="font-black">اطلاعات داخلی</h2>{!editingInternal && <button className="min-h-11 px-2 text-sm font-black text-teal" type="button" onClick={() => setEditingInternal(true)}>ویرایش سریع</button>}</div>
+        {!editingInternal && <>
+          <div className="mt-3 text-sm"><p className="text-xs font-bold text-ink/60">اینستاگرام</p><p className="mt-1 font-bold" dir="ltr">{order.instagramUsername ? `@${order.instagramUsername}` : "ثبت نشده"}</p></div>
+          <div className="mt-4"><p className="text-xs font-bold text-ink/60">یادداشت داخلی</p><p className="mt-1 whitespace-pre-wrap text-sm leading-7">{order.internalNote || "یادداشتی ثبت نشده است."}</p></div>
+        </>}
+        {editingInternal && <form className="mt-3 space-y-3" onSubmit={(event) => { event.preventDefault(); void saveChanges("internal", { instagramUsername, internalNote }); }}>
+          <label className="block"><span className="mb-2 block text-sm font-bold">اینستاگرام مشتری</span><input className="field" dir="ltr" maxLength={101} value={instagramUsername} onChange={(event) => setInstagramUsername(event.target.value)} placeholder="username" /></label>
+          <label className="block"><span className="mb-2 block text-sm font-bold">یادداشت داخلی</span><textarea className="field min-h-24 py-3" maxLength={1000} value={internalNote} onChange={(event) => setInternalNote(event.target.value)} /></label>
+          <div className="grid grid-cols-2 gap-2"><button className="secondary-button" type="button" onClick={cancelInternalEdit}>انصراف</button><button className="primary-button" disabled={Boolean(saving)}>{saving === "internal" ? "در حال ذخیره…" : "ذخیره"}</button></div>
+        </form>}
       </section>
 
       <section className="mt-5 rounded-3xl border border-ledger bg-white p-5">
@@ -2003,7 +2117,7 @@ function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; onBusyChange: (bu
   );
 }
 
-function AdminApp({ me, onLogout }: { me: Me; onLogout: () => void }) {
+function AdminApp({ me, onShopUpdated, onLogout }: { me: Me; onShopUpdated: (shop: Shop) => void; onLogout: () => void }) {
   const savedID = Number(localStorage.getItem("radif_shop_id"));
   const [shopID, setShopID] = useState(me.shops.some((shop) => shop.id === savedID) ? savedID : me.shops[0]?.id);
   const [creating, setCreating] = useState(false);
@@ -2046,7 +2160,7 @@ function AdminApp({ me, onLogout }: { me: Me; onLogout: () => void }) {
           <Route path="/products" element={<ProductsPage key={selected.id} shop={selected} />} />
           <Route path="/products/new" element={<ProductFormPage key={selected.id} shop={selected} mode="create" />} />
           <Route path="/products/:productID/edit" element={<ProductFormPage key={`${selected.id}-${location.pathname}`} shop={selected} mode="edit" />} />
-          <Route path="/account" element={<AccountPage me={me} onLogout={logout} />} />
+          <Route path="/account" element={<AccountPage me={me} shop={selected} onShopUpdated={onShopUpdated} onLogout={logout} />} />
           <Route path="*" element={<Navigate to="/orders/new" replace />} />
         </Routes>
       </main>
@@ -2094,5 +2208,5 @@ export default function App() {
     );
   }
   if (location.pathname === "/login") return <Navigate to="/orders/new" replace />;
-  return <AdminApp me={session.me} onLogout={() => setSession({ state: "guest" })} />;
+  return <AdminApp me={session.me} onShopUpdated={(shop) => setSession({ state: "ready", me: { ...session.me, shops: session.me.shops.map((current) => current.id === shop.id ? shop : current) } })} onLogout={() => setSession({ state: "guest" })} />;
 }

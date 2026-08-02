@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -239,6 +240,8 @@ func updateOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 			CustomerPostalCode    *string `json:"customerPostalCode"`
 			CustomerNote          *string `json:"customerNote"`
 			ShipmentTrackingCode  *string `json:"shipmentTrackingCode"`
+			InstagramUsername     *string `json:"instagramUsername"`
+			InternalNote          *string `json:"internalNote"`
 		}
 		c.Request().Body = http.MaxBytesReader(c.Response(), c.Request().Body, 16<<10)
 		decoder := json.NewDecoder(c.Request().Body)
@@ -249,7 +252,7 @@ func updateOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 		if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 			return echo.NewHTTPError(http.StatusBadRequest, "اطلاعات سفارش معتبر نیست.")
 		}
-		if input.EstimatedDeliveryDate == nil && input.Status == nil && input.CustomerFullName == nil && input.CustomerMobile == nil && input.CustomerAddress == nil && input.CustomerPostalCode == nil && input.CustomerNote == nil && input.ShipmentTrackingCode == nil {
+		if input.EstimatedDeliveryDate == nil && input.Status == nil && input.CustomerFullName == nil && input.CustomerMobile == nil && input.CustomerAddress == nil && input.CustomerPostalCode == nil && input.CustomerNote == nil && input.ShipmentTrackingCode == nil && input.InstagramUsername == nil && input.InternalNote == nil {
 			return echo.NewHTTPError(http.StatusBadRequest, "تغییری برای ذخیره ارسال نشده است.")
 		}
 		if input.EstimatedDeliveryDate != nil {
@@ -273,6 +276,20 @@ func updateOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 			}
 			input.ShipmentTrackingCode = &value
 		}
+		if input.InstagramUsername != nil {
+			value := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(*input.InstagramUsername), "@"))
+			if len([]rune(value)) > 100 {
+				return echo.NewHTTPError(http.StatusBadRequest, "نام کاربری اینستاگرام بیش از حد طولانی است.")
+			}
+			input.InstagramUsername = &value
+		}
+		if input.InternalNote != nil {
+			value := strings.TrimSpace(*input.InternalNote)
+			if len([]rune(value)) > 1000 {
+				return echo.NewHTTPError(http.StatusBadRequest, "یادداشت داخلی بیش از حد طولانی است.")
+			}
+			input.InternalNote = &value
+		}
 		admin := c.Get(adminContextKey).(*Admin)
 		err = db.Transaction(func(tx *gorm.DB) error {
 			var order Order
@@ -289,6 +306,12 @@ func updateOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 			}
 			if input.ShipmentTrackingCode != nil {
 				updates["shipment_tracking_code"] = *input.ShipmentTrackingCode
+			}
+			if input.InstagramUsername != nil {
+				updates["instagram_username"] = *input.InstagramUsername
+			}
+			if input.InternalNote != nil {
+				updates["internal_note"] = *input.InternalNote
 			}
 			customerUpdate := input.CustomerFullName != nil || input.CustomerMobile != nil || input.CustomerAddress != nil || input.CustomerPostalCode != nil || input.CustomerNote != nil
 			if customerUpdate {
@@ -623,6 +646,9 @@ func publicOrderResponse(c echo.Context, status int, order Order) error {
 		"updatedAt":                 order.UpdatedAt,
 		"history":                   history,
 	}
+	if support := publicSupport(order); support != nil {
+		response["support"] = support
+	}
 	if submitted {
 		mobile := order.CustomerMobile
 		if len(mobile) > 8 {
@@ -646,6 +672,46 @@ func publicOrderResponse(c echo.Context, status int, order Order) error {
 		}
 	}
 	return c.JSON(status, response)
+}
+
+func publicSupport(order Order) map[string]string {
+	message := fmt.Sprintf("سلام، درباره سفارش #%d سوال دارم.", order.ID)
+	if order.CustomerSubmittedAt != nil {
+		message = fmt.Sprintf("برای سفارش #%d نیاز به اصلاح اطلاعات دارم.", order.ID)
+	}
+	switch order.Shop.SupportChannel {
+	case "instagram":
+		if order.Shop.InstagramUsername != "" {
+			return map[string]string{"channel": "instagram", "url": "https://ig.me/m/" + order.Shop.InstagramUsername, "message": message}
+		}
+	case "whatsapp":
+		if order.Shop.WhatsAppNumber != "" {
+			return map[string]string{"channel": "whatsapp", "url": "https://wa.me/" + order.Shop.WhatsAppNumber + "?text=" + url.QueryEscape(message), "message": message}
+		}
+	}
+	return nil
+}
+
+func recordPublicSupportClick(db *gorm.DB) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		order, err := findPublicOrder(db, c.Param("token"))
+		if err != nil {
+			return err
+		}
+		support := publicSupport(order)
+		if support == nil {
+			return echo.NewHTTPError(http.StatusNotFound, "راه ارتباطی فروشگاه پیدا نشد.")
+		}
+		action := "message_shop"
+		if order.CustomerSubmittedAt != nil {
+			action = "correction_request"
+		}
+		metadata, _ := json.Marshal(map[string]string{"action": action, "channel": support["channel"]})
+		if err := db.Create(&PilotEvent{EventName: "public_support_clicked", OrderID: &order.ID, Metadata: string(metadata)}).Error; err != nil {
+			return err
+		}
+		return c.NoContent(http.StatusNoContent)
+	}
 }
 
 func recordLinkCopied(db *gorm.DB) echo.HandlerFunc {
