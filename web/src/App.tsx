@@ -289,12 +289,15 @@ function DeliveryDateSelect({ id, value, onChange, invalid, describedBy }: { id:
 }
 
 async function optimizeReceipt(file: File) {
-  if (file.size <= 512 * 1024) return file;
-
-  const source = URL.createObjectURL(file);
+  const end = file.type === "image/jpeg" ? new Uint8Array(await file.slice(-2).arrayBuffer()) : null;
+  const decodable = end && (end[0] !== 0xff || end[1] !== 0xd9)
+    ? new Blob([file, new Uint8Array([0xff, 0xd9])], { type: file.type })
+    : file;
+  const source = URL.createObjectURL(decodable);
   try {
     const image = await loadImage(source);
-    const scale = Math.min(1, 2000 / Math.max(image.naturalWidth, image.naturalHeight));
+    const longestSide = Math.max(image.naturalWidth, image.naturalHeight);
+    const scale = Math.min(1, 2000 / longestSide);
     const canvas = document.createElement("canvas");
     canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
     canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
@@ -302,7 +305,7 @@ async function optimizeReceipt(file: File) {
     if (!context) return file;
     context.drawImage(image, 0, 0, canvas.width, canvas.height);
     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", 0.82));
-    if (!blob || blob.size >= file.size) return file;
+    if (!blob) return file;
     return new File([blob], "receipt.webp", { type: blob.type, lastModified: Date.now() });
   } finally {
     URL.revokeObjectURL(source);
