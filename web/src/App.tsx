@@ -1299,13 +1299,15 @@ function PublicOrderPage() {
 
   function supportAction(label: string) {
     if (!order?.support) return null;
+    const instagramInApp = order.support.channel === "instagram" && /Instagram/i.test(navigator.userAgent);
+    const href = instagramInApp ? `instagram://user?username=${order.support.url.split("/").pop() ?? ""}` : order.support.url;
     return (
       <div className="mt-5">
-        <a className="secondary-button w-full" href={order.support.url} target="_blank" rel="noreferrer" onClick={supportClicked}>
+        <a className="secondary-button w-full" href={href} target={instagramInApp ? undefined : "_blank"} rel="noreferrer" onClick={supportClicked}>
           <MessageCircle className="size-5" aria-hidden="true" />
           {label}
         </a>
-        {order.support.channel === "instagram" && <p className="mt-2 text-center text-xs text-ink/60">متن پیام کپی می‌شود و اینستاگرام باز می‌شود.</p>}
+        {order.support.channel === "instagram" && <p className="mt-2 text-center text-xs text-ink/60">{instagramInApp ? "متن پیام کپی می‌شود؛ در صفحه فروشگاه روی «پیام» بزنید." : "متن پیام کپی می‌شود و اینستاگرام باز می‌شود."}</p>}
       </div>
     );
   }
