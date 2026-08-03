@@ -143,6 +143,7 @@ func newServer(db *gorm.DB, cfg config) *echo.Echo {
 	e.DELETE("/api/shops/:shopID/products/:productID", archiveProduct(db), requireAdmin(db, cfg), requireShopAccess(db), origin)
 	e.POST("/api/shops/:shopID/products/:productID/activate", activateProduct(db), requireAdmin(db, cfg), requireShopAccess(db), origin)
 	e.POST("/api/orders", createOrder(db, cfg), requireAdmin(db, cfg), origin)
+	e.POST("/api/orders/import", importHistoricalOrder(db, cfg), requireAdmin(db, cfg), origin)
 	e.GET("/api/orders", listOrders(db), requireAdmin(db, cfg))
 	e.GET("/api/orders/:orderID", getOrder(db, cfg), requireAdmin(db, cfg))
 	e.PATCH("/api/orders/:orderID", updateOrder(db, cfg), requireAdmin(db, cfg), origin)

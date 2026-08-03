@@ -1,6 +1,8 @@
-import { Clipboard, LoaderCircle, Package, RotateCcw, Upload } from "lucide-react";
+import { Check, Clipboard, LoaderCircle, Package, RotateCcw, Upload } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import type { Product } from "./shared";
+import { persianNumber, type Product } from "./shared";
+
+export type SelectedOrderItem = { product: Product; quantity: number };
 
 export function Brand() {
   return (
@@ -45,6 +47,58 @@ export function ProductImage({ product }: { product: Product }) {
       <Package className="size-6" aria-hidden="true" />
       <img className="absolute inset-0 size-full object-cover" src={product.imagePath} alt="" onError={(event) => { event.currentTarget.style.display = "none"; }} />
     </span>
+  );
+}
+
+export function ProductChoices({ products, items, onChange }: {
+  products: Product[];
+  items: SelectedOrderItem[];
+  onChange: (items: SelectedOrderItem[]) => void;
+}) {
+  function toggle(product: Product) {
+    const exists = items.some((item) => item.product.id === product.id);
+    onChange(exists ? items.filter((item) => item.product.id !== product.id) : [...items, { product, quantity: 1 }]);
+  }
+  function changeQuantity(productID: number, change: number) {
+    onChange(items.map((item) => item.product.id === productID ? { ...item, quantity: Math.min(99, Math.max(1, item.quantity + change)) } : item));
+  }
+  return (
+    <>
+      <div className="mt-3 space-y-3">{products.map((product) => {
+        const selectedItem = items.find((item) => item.product.id === product.id);
+        const isSelected = Boolean(selectedItem);
+        return (
+          <div className={`product-choice product-choice-multi ${isSelected ? "product-choice-selected" : ""}`} key={product.id}>
+            <button className="product-choice-main" type="button" aria-pressed={isSelected} onClick={() => toggle(product)}>
+              <ProductImage product={product} />
+              <span className="min-w-0 flex-1 text-right">
+                <span className="block font-black">{product.name}</span>
+                {product.shortDescription && <span className="mt-0.5 block truncate text-xs text-ink/70">{product.shortDescription}</span>}
+                <span className="mt-2 block text-sm font-bold text-teal">{persianNumber(product.defaultPrice)} تومان</span>
+              </span>
+              <span className={`grid size-6 shrink-0 place-items-center rounded-full border ${isSelected ? "border-saffron bg-saffron" : "border-ink/20"}`}>
+                {isSelected && <Check className="size-4" strokeWidth={3} aria-hidden="true" />}
+              </span>
+            </button>
+            {selectedItem && (
+              <div className="flex items-center justify-between border-t border-saffron/35 px-4 py-2.5">
+                <span className="text-sm font-bold">تعداد</span>
+                <span className="flex items-center gap-2" aria-label={`تعداد ${product.name}`}>
+                  <button className="quantity-button" type="button" onClick={() => changeQuantity(product.id, -1)} disabled={selectedItem.quantity === 1} aria-label={`کم‌کردن تعداد ${product.name}`}>−</button>
+                  <span className="min-w-7 text-center font-black" aria-live="polite">{persianNumber(selectedItem.quantity)}</span>
+                  <button className="quantity-button" type="button" onClick={() => changeQuantity(product.id, 1)} disabled={selectedItem.quantity === 99} aria-label={`زیادکردن تعداد ${product.name}`}>+</button>
+                </span>
+              </div>
+            )}
+          </div>
+        );
+      })}</div>
+      {items.length > 0 && (
+        <p className="mt-3 text-sm font-bold text-teal" aria-live="polite">
+          {persianNumber(items.reduce((total, item) => total + item.quantity, 0))} قلم از {persianNumber(items.length)} محصول انتخاب شده
+        </p>
+      )}
+    </>
   );
 }
 
@@ -98,7 +152,7 @@ async function optimizeReceipt(file: File) {
   }
 }
 
-export function ReceiptPicker({ id, file, onChange }: { id: string; file: File | null; onChange: (file: File | null) => void }) {
+export function ReceiptPicker({ id, file, onChange, onBusyChange }: { id: string; file: File | null; onChange: (file: File | null) => void; onBusyChange?: (busy: boolean) => void }) {
   const input = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState("");
   const [optimizing, setOptimizing] = useState(false);
@@ -118,7 +172,8 @@ export function ReceiptPicker({ id, file, onChange }: { id: string; file: File |
     if (!selected) return;
     onChange(null);
     setOptimizing(true);
-    try { onChange(await optimizeReceipt(selected)); } catch { onChange(selected); } finally { setOptimizing(false); }
+    onBusyChange?.(true);
+    try { onChange(await optimizeReceipt(selected)); } catch { onChange(selected); } finally { setOptimizing(false); onBusyChange?.(false); }
   }
 
   return (

@@ -6,6 +6,7 @@ import { api, type BeforeInstallPromptEvent, type Me, type Shop } from "./shared
 
 const OrdersPage = lazy(() => import("./pages/OrdersPage"));
 const CreateOrderPage = lazy(() => import("./pages/CreateOrderPage"));
+const HistoricalOrderPage = lazy(() => import("./pages/HistoricalOrderPage"));
 const AdminOrderPage = lazy(() => import("./pages/AdminOrderPage"));
 const ProductsPage = lazy(() => import("./pages/ProductsPage"));
 const ProductFormPage = lazy(() => import("./pages/ProductFormPage"));
@@ -166,6 +167,7 @@ export default function AdminApp({ me, installPrompt, onInstallDone, onShopUpdat
           <Routes>
             <Route path="/orders" element={<OrdersPage shop={selected} />} />
             <Route path="/orders/new" element={<CreateOrderPage key={selected.id} shop={selected} onBusyChange={setCreating} />} />
+            <Route path="/orders/import" element={<HistoricalOrderPage key={selected.id} shop={selected} onBusyChange={setCreating} />} />
             <Route path="/orders/:orderID" element={<AdminOrderPage />} />
             <Route path="/products" element={<ProductsPage key={selected.id} shop={selected} />} />
             <Route path="/products/new" element={<ProductFormPage key={selected.id} shop={selected} mode="create" />} />

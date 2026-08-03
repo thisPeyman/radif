@@ -994,6 +994,11 @@ button:disabled {
   animation: reveal-fields 180ms ease-out both;
 }
 
+.historical-cover {
+  background-color: #183b4e;
+  background-image: repeating-linear-gradient(to bottom, transparent 0, transparent 2.15rem, rgb(228 238 240 / 7%) 2.15rem, rgb(228 238 240 / 7%) calc(2.15rem + 1px));
+}
+
 details[open] .details-chevron {
   transform: rotate(180deg);
 }

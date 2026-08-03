@@ -1,11 +1,9 @@
-import { CalendarDays, Check, ChevronDown, Clipboard, ClipboardCheck, LoaderCircle, Package, Plus, Share2 } from "lucide-react";
+import { ArchiveRestore, CalendarDays, ChevronDown, Clipboard, ClipboardCheck, LoaderCircle, Package, Plus, Share2 } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { NavLink } from "react-router";
-import { ErrorNotice, ProductImage } from "../components";
+import { ErrorNotice, ProductChoices, type SelectedOrderItem } from "../components";
 import DeliveryDateSelect from "../DeliveryDateSelect";
 import { api, defaultShareMessageTemplate, normalizeDigits, persianDate, persianDigits, persianNumber, randomID, todayISO, type CreatedOrder, type Product, type Shop } from "../shared";
-
-type SelectedItem = { product: Product; quantity: number };
 
 function newCreateKey(shopID: number) {
   const storageKey = `radif_create_key_${shopID}`;
@@ -20,7 +18,7 @@ export default function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; on
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
-  const [items, setItems] = useState<SelectedItem[]>([]);
+  const [items, setItems] = useState<SelectedOrderItem[]>([]);
   const [amount, setAmount] = useState("");
   const [amountFocused, setAmountFocused] = useState(false);
   const [deliveryDate, setDeliveryDate] = useState("");
@@ -59,20 +57,11 @@ export default function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; on
 
   useEffect(loadProducts, [shop.id]);
 
-  function updateItems(next: SelectedItem[]) {
+  function updateItems(next: SelectedOrderItem[]) {
     setItems(next);
     setAmount(String(next.reduce((total, item) => total + item.product.defaultPrice * item.quantity, 0)));
     setAmountError("");
     setError("");
-  }
-
-  function toggleProduct(product: Product) {
-    const exists = items.some((item) => item.product.id === product.id);
-    updateItems(exists ? items.filter((item) => item.product.id !== product.id) : [...items, { product, quantity: 1 }]);
-  }
-
-  function changeQuantity(productID: number, change: number) {
-    updateItems(items.map((item) => item.product.id === productID ? { ...item, quantity: Math.min(99, Math.max(1, item.quantity + change)) } : item));
   }
 
   async function recordCopy(order: CreatedOrder) {
@@ -274,6 +263,11 @@ export default function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; on
         <p className="page-kicker">{shop.name}</p>
         <h1 className="page-title">سفارش جدید</h1>
         <p className="mt-2 text-sm leading-7 text-ink/70">یک یا چند محصول را انتخاب کنید؛ مبلغ آماده است و لینک با یک لمس ساخته می‌شود.</p>
+        <NavLink className="mt-4 flex min-h-14 items-center gap-3 rounded-2xl border border-ink/10 bg-ledger/55 px-4 text-sm font-black text-ink no-underline" to="/orders/import">
+          <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-ink text-white"><ArchiveRestore className="size-4" aria-hidden="true" /></span>
+          <span className="flex-1">ثبت سفارش‌های قدیمی</span>
+          <span className="text-xs text-teal">ورود سریع</span>
+        </NavLink>
         <fieldset className="mt-7">
           <legend className="text-sm font-black">انتخاب محصول</legend>
           {loading && (
@@ -290,56 +284,7 @@ export default function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; on
               <p className="mt-1 text-sm leading-7 text-ink/70">برای این فروشگاه هنوز محصولی آماده ثبت سفارش نیست.</p>
             </div>
           )}
-          <div className="mt-3 space-y-3">{products.map((product) => {
-            const selectedItem = items.find((item) => item.product.id === product.id);
-            const isSelected = Boolean(selectedItem);
-            return (
-              <div className={`product-choice product-choice-multi ${isSelected ? "product-choice-selected" : ""}`} key={product.id}>
-                <button className="product-choice-main" type="button" aria-pressed={isSelected} onClick={() => toggleProduct(product)}>
-                  <ProductImage product={product} />
-                  <span className="min-w-0 flex-1 text-right">
-                    <span className="block font-black">{product.name}</span>
-                    {product.shortDescription && <span className="mt-0.5 block truncate text-xs text-ink/70">{product.shortDescription}</span>}
-                    <span className="mt-2 block text-sm font-bold text-teal">{persianNumber(product.defaultPrice)} تومان</span>
-                  </span>
-                  <span className={`grid size-6 shrink-0 place-items-center rounded-full border ${isSelected ? "border-saffron bg-saffron" : "border-ink/20"}`}>
-                    {isSelected && <Check className="size-4" strokeWidth={3} aria-hidden="true" />}
-                  </span>
-                </button>
-                {selectedItem && (
-                  <div className="flex items-center justify-between border-t border-saffron/35 px-4 py-2.5">
-                    <span className="text-sm font-bold">تعداد</span>
-                    <span className="flex items-center gap-2" aria-label={`تعداد ${product.name}`}>
-                      <button
-                        className="quantity-button"
-                        type="button"
-                        onClick={() => changeQuantity(product.id, -1)}
-                        disabled={selectedItem.quantity === 1}
-                        aria-label={`کم‌کردن تعداد ${product.name}`}
-                      >
-                        −
-                      </button>
-                      <span className="min-w-7 text-center font-black" aria-live="polite">{persianNumber(selectedItem.quantity)}</span>
-                      <button
-                        className="quantity-button"
-                        type="button"
-                        onClick={() => changeQuantity(product.id, 1)}
-                        disabled={selectedItem.quantity === 99}
-                        aria-label={`زیادکردن تعداد ${product.name}`}
-                      >
-                        +
-                      </button>
-                    </span>
-                  </div>
-                )}
-              </div>
-            );
-          })}</div>
-          {items.length > 0 && (
-            <p className="mt-3 text-sm font-bold text-teal" aria-live="polite">
-              {persianNumber(items.reduce((total, item) => total + item.quantity, 0))} قلم از {persianNumber(items.length)} محصول انتخاب شده
-            </p>
-          )}
+          <ProductChoices products={products} items={items} onChange={updateItems} />
         </fieldset>
 
         {items.length > 0 && <div className="creation-fields mt-7">

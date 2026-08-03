@@ -16,12 +16,13 @@ function dateToISO(value: Date) {
   return `${year}-${month}-${day}`;
 }
 
-export default function DeliveryDateSelect({ id, value, onChange, invalid, describedBy }: {
+export default function DeliveryDateSelect({ id, value, onChange, invalid, describedBy, allowPast = false }: {
   id: string;
   value: string;
   onChange: (value: string) => void;
   invalid?: boolean;
   describedBy?: string;
+  allowPast?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const selected = dateFromISO(value);
@@ -48,11 +49,13 @@ export default function DeliveryDateSelect({ id, value, onChange, invalid, descr
         <div id={`${id}-calendar`} className="delivery-calendar mt-2 rounded-2xl border border-ledger bg-white p-3 shadow-sm" role="region" aria-label="تقویم تاریخ تحویل">
           <DayPicker
             mode="single"
+            captionLayout={allowPast ? "dropdown" : "label"}
+            navLayout="after"
             selected={selected}
             defaultMonth={selected ?? today}
-            startMonth={today}
+            startMonth={allowPast ? undefined : today}
             endMonth={endMonth}
-            disabled={{ before: today }}
+            disabled={allowPast ? undefined : { before: today }}
             onSelect={(day) => {
               if (!day) return;
               onChange(dateToISO(day));
