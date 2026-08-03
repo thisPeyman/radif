@@ -69,7 +69,7 @@ func TestMigrateAndSeedIsRepeatable(t *testing.T) {
 	db := openTestDatabase(t)
 
 	models := []any{
-		&Admin{}, &Session{}, &AdminShop{}, &Shop{}, &Product{}, &Order{}, &OrderItem{}, &OrderStatusHistory{}, &PilotEvent{},
+		&Admin{}, &Session{}, &AdminShop{}, &Shop{}, &ShopPaymentCard{}, &Product{}, &Order{}, &OrderItem{}, &OrderStatusHistory{}, &PilotEvent{},
 	}
 	for _, model := range models {
 		if !db.Migrator().HasTable(model) {
@@ -85,6 +85,11 @@ func TestMigrateAndSeedIsRepeatable(t *testing.T) {
 	for _, column := range []string{"instagram_username", "whatsapp_number", "support_channel", "share_message_template"} {
 		if !db.Migrator().HasColumn(&Shop{}, column) {
 			t.Fatalf("shops is missing %s", column)
+		}
+	}
+	for _, column := range []string{"payment_card_number", "payment_instructions"} {
+		if !db.Migrator().HasColumn(&Order{}, column) {
+			t.Fatalf("orders is missing %s", column)
 		}
 	}
 

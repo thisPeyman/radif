@@ -33,6 +33,15 @@ var validOrderStatuses = map[string]bool{
 var errOrderAlreadyCreated = errors.New("order already created")
 var iranTime = time.FixedZone("Iran", 3*60*60+30*60)
 
+func lockedActiveShop(tx *gorm.DB, adminID, shopID uint) (Shop, error) {
+	var shop Shop
+	err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Joins("JOIN admin_shops ON admin_shops.shop_id = shops.id AND admin_shops.admin_id = ?", adminID).Where("shops.id = ? AND shops.active = ?", shopID, true).First(&shop).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return Shop{}, echo.NewHTTPError(http.StatusNotFound, "محصول پیدا نشد.")
+	}
+	return shop, err
+}
+
 func createOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		var input struct {
@@ -128,10 +137,13 @@ func createOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 		now := time.Now()
 		var products []Product
 		err = db.Transaction(func(tx *gorm.DB) error {
-			if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Joins("JOIN shops ON shops.id = products.shop_id").Joins("JOIN admin_shops ON admin_shops.shop_id = shops.id AND admin_shops.admin_id = ?", admin.ID).Where(
-				"products.id IN ? AND products.shop_id = ? AND products.active = ? AND shops.active = ?",
-				productIDs, input.ShopID, true, true,
-			).Find(&products).Error; err != nil {
+			shop, err := lockedActiveShop(tx, admin.ID, input.ShopID)
+			if err != nil {
+				return err
+			}
+			order.PaymentCardNumber = shop.PaymentCardNumber
+			order.PaymentInstructions = shop.PaymentInstructions
+			if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where("id IN ? AND shop_id = ? AND active = ?", productIDs, input.ShopID, true).Find(&products).Error; err != nil {
 				return err
 			}
 			if len(products) != len(input.Items) {
@@ -671,6 +683,12 @@ func publicOrderResponse(c echo.Context, status int, order Order) error {
 	}
 	submitted := order.CustomerSubmittedAt != nil
 	receiptUploaded := order.ReceiptFilePath != ""
+	paymentCardNumber := order.PaymentCardNumber
+	paymentInstructions := order.PaymentInstructions
+	if paymentCardNumber == "" {
+		paymentCardNumber = order.Shop.PaymentCardNumber
+		paymentInstructions = order.Shop.PaymentInstructions
+	}
 	response := map[string]any{
 		"orderCode":                 fmt.Sprintf("#%d", order.ID),
 		"shop":                      map[string]any{"name": order.Shop.Name, "logoPath": order.Shop.LogoPath},
@@ -678,8 +696,8 @@ func publicOrderResponse(c echo.Context, status int, order Order) error {
 		"amount":                    order.Amount,
 		"status":                    order.Status,
 		"estimatedDeliveryDate":     order.EstimatedDeliveryDate,
-		"paymentCardNumber":         order.Shop.PaymentCardNumber,
-		"paymentInstructions":       order.Shop.PaymentInstructions,
+		"paymentCardNumber":         paymentCardNumber,
+		"paymentInstructions":       paymentInstructions,
 		"customerSubmitted":         submitted,
 		"customerSubmissionAllowed": !submitted && order.Status == waitingInfoStatus,
 		"receiptUploaded":           receiptUploaded,

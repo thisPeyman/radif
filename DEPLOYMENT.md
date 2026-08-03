@@ -193,6 +193,8 @@ sudo docker compose up -d --force-recreate --no-deps --wait app
 
 This is safe only when newly applied migrations are backward-compatible with the previous image. Never remove or rename a column in the same release that stops using it.
 
+The image before payment-card snapshots reads the shop's currently active card for every order. If rolling back to that image after switching cards, restore the intended active shop payment fields or redeploy the current image before customers use existing order links.
+
 ## Update operations files
 
 Normal releases upload only the app image. If `deploy/` changes, upload it separately and inspect the Compose result before applying it:
@@ -327,19 +329,31 @@ Shop management is still manual. Run a backup first, then use a transaction in D
 ```sql
 BEGIN;
 
-INSERT INTO shops (
-    owner_admin_id, name, logo_path, short_description,
-    payment_card_number, payment_instructions, active,
-    created_at, updated_at
+WITH owner AS (
+    SELECT id FROM admins WHERE login = 'admin'
+), new_shop AS (
+    INSERT INTO shops (
+        name, logo_path, short_description,
+        payment_card_number, payment_instructions, active,
+        created_at, updated_at
+    )
+    SELECT
+        'Shop name', '/images/shop.svg', 'Description',
+        '6037990000000000', 'Card holder and payment instructions', true,
+        now(), now()
+    FROM owner
+    RETURNING id, payment_card_number, payment_instructions
+), shop_access AS (
+    INSERT INTO admin_shops (admin_id, shop_id, created_at)
+    SELECT owner.id, new_shop.id, now() FROM owner CROSS JOIN new_shop
 )
-SELECT
-    id, 'Shop name', '/images/shop.svg', 'Description',
-    '6037990000000000', 'Card holder and payment instructions', true,
-    now(), now()
-FROM admins
-WHERE login = 'admin';
+INSERT INTO shop_payment_cards (shop_id, card_number, payment_instructions)
+SELECT id, payment_card_number, payment_instructions FROM new_shop;
 
-SELECT id, name, owner_admin_id FROM shops ORDER BY id DESC;
+SELECT shops.id, shops.name, admin_shops.admin_id
+FROM shops
+JOIN admin_shops ON admin_shops.shop_id = shops.id
+ORDER BY shops.id DESC;
 
 COMMIT;
 ```

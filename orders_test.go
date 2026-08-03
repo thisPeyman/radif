@@ -91,7 +91,7 @@ func TestCreateOrderAndRecordCopy(t *testing.T) {
 	if err := db.First(&order, output.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if order.Status != waitingInfoStatus || order.EstimatedDeliveryDate != deliveryDate || order.InstagramUsername != "customer" || order.InternalNote != "test" || order.Amount != 1520000 {
+	if order.Status != waitingInfoStatus || order.EstimatedDeliveryDate != deliveryDate || order.InstagramUsername != "customer" || order.InternalNote != "test" || order.Amount != 1520000 || order.PaymentCardNumber != "6037991812345678" || order.PaymentInstructions != "به نام فروشگاه خانه آبی" {
 		t.Fatalf("unexpected order: %#v", order)
 	}
 	var items []OrderItem
@@ -115,6 +115,13 @@ func TestCreateOrderAndRecordCopy(t *testing.T) {
 	}
 	if body := publicResponse.Body.String(); strings.Contains(body, "internalNote") || strings.Contains(body, "customerMobile") || strings.Contains(body, "test") {
 		t.Fatalf("public order exposed private data: %s", body)
+	}
+	if err := db.Model(&Shop{}).Where("id = ?", order.ShopID).Updates(map[string]any{"payment_card_number": "5022291012345678", "payment_instructions": "حساب جدید"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	publicResponse = request(e, http.MethodGet, "/api"+parsedURL.Path, "", "", nil)
+	if !strings.Contains(publicResponse.Body.String(), `"paymentCardNumber":"6037991812345678"`) || !strings.Contains(publicResponse.Body.String(), `"paymentInstructions":"به نام فروشگاه خانه آبی"`) {
+		t.Fatalf("existing order payment profile changed with shop: %s", publicResponse.Body.String())
 	}
 	if strings.Contains(publicResponse.Body.String(), `"support"`) {
 		t.Fatalf("public order exposed an unconfigured support action: %s", publicResponse.Body.String())

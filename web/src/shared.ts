@@ -7,6 +7,14 @@ export type Shop = {
   whatsappNumber?: string;
   supportChannel?: "instagram" | "whatsapp";
   shareMessageTemplate?: string;
+  paymentCards: PaymentCard[];
+};
+
+export type PaymentCard = {
+  id: number;
+  cardNumber: string;
+  paymentInstructions: string;
+  active: boolean;
 };
 
 export type Me = {

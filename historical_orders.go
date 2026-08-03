@@ -175,9 +175,13 @@ func importHistoricalOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 		}
 		var products []Product
 		err = db.Transaction(func(tx *gorm.DB) error {
-			if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Joins("JOIN shops ON shops.id = products.shop_id").Joins("JOIN admin_shops ON admin_shops.shop_id = shops.id AND admin_shops.admin_id = ?", admin.ID).Where(
-				"products.id IN ? AND products.shop_id = ? AND products.active = ? AND shops.active = ?", productIDs, input.ShopID, true, true,
-			).Find(&products).Error; err != nil {
+			shop, err := lockedActiveShop(tx, admin.ID, input.ShopID)
+			if err != nil {
+				return err
+			}
+			order.PaymentCardNumber = shop.PaymentCardNumber
+			order.PaymentInstructions = shop.PaymentInstructions
+			if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where("id IN ? AND shop_id = ? AND active = ?", productIDs, input.ShopID, true).Find(&products).Error; err != nil {
 				return err
 			}
 			if len(products) != len(input.Items) {

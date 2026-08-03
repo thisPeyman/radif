@@ -78,7 +78,7 @@ func TestImportHistoricalOrder(t *testing.T) {
 	if err := db.First(&order, output.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if order.Status != "preparing" || order.EstimatedDeliveryDate != "2020-01-02" || order.Amount != 650000 || order.CustomerSubmittedAt == nil || order.CustomerMobile != "09123456789" || order.CustomerPostalCode != "1234567890" || order.ReceiptFilePath != "" || order.InstagramUsername != "sara.old" {
+	if order.Status != "preparing" || order.EstimatedDeliveryDate != "2020-01-02" || order.Amount != 650000 || order.CustomerSubmittedAt == nil || order.CustomerMobile != "09123456789" || order.CustomerPostalCode != "1234567890" || order.ReceiptFilePath != "" || order.InstagramUsername != "sara.old" || order.PaymentCardNumber != "6037991812345678" || order.PaymentInstructions != "به نام فروشگاه خانه آبی" {
 		t.Fatalf("unexpected imported order: %#v", order)
 	}
 	var item OrderItem

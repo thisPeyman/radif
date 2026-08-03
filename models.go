@@ -36,9 +36,19 @@ type Shop struct {
 	WhatsAppNumber       string `gorm:"column:whatsapp_number;not null"`
 	SupportChannel       string `gorm:"not null"`
 	ShareMessageTemplate string `gorm:"not null"`
-	Active               bool   `gorm:"not null;index"`
+	PaymentCards         []ShopPaymentCard
+	Active               bool `gorm:"not null;index"`
 	CreatedAt            time.Time
 	UpdatedAt            time.Time
+}
+
+type ShopPaymentCard struct {
+	ID                  uint   `gorm:"primaryKey"`
+	ShopID              uint   `gorm:"not null;uniqueIndex:idx_shop_payment_cards_shop_number"`
+	CardNumber          string `gorm:"not null;uniqueIndex:idx_shop_payment_cards_shop_number"`
+	PaymentInstructions string `gorm:"not null"`
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
 }
 
 type Product struct {
@@ -61,6 +71,8 @@ type Order struct {
 	SecretToken           string `gorm:"not null;uniqueIndex"`
 	ShopID                uint   `gorm:"not null;index"`
 	Shop                  Shop
+	PaymentCardNumber     string
+	PaymentInstructions   string
 	Items                 []OrderItem
 	History               []OrderStatusHistory
 	Amount                int64  `gorm:"not null"`

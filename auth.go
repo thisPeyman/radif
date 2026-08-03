@@ -157,23 +157,28 @@ func me(db *gorm.DB) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		admin := c.Get(adminContextKey).(*Admin)
 		var shops []Shop
-		if err := db.Joins("JOIN admin_shops ON admin_shops.shop_id = shops.id").Where("admin_shops.admin_id = ? AND shops.active = ?", admin.ID, true).Order("shops.id").Find(&shops).Error; err != nil {
+		if err := db.Preload("PaymentCards", func(query *gorm.DB) *gorm.DB { return query.Order("id") }).Joins("JOIN admin_shops ON admin_shops.shop_id = shops.id").Where("admin_shops.admin_id = ? AND shops.active = ?", admin.ID, true).Order("shops.id").Find(&shops).Error; err != nil {
 			return err
 		}
 
 		type publicShop struct {
-			ID                   uint   `json:"id"`
-			Name                 string `json:"name"`
-			LogoPath             string `json:"logoPath,omitempty"`
-			ShortDescription     string `json:"shortDescription,omitempty"`
-			InstagramUsername    string `json:"instagramUsername,omitempty"`
-			WhatsAppNumber       string `json:"whatsappNumber,omitempty"`
-			SupportChannel       string `json:"supportChannel,omitempty"`
-			ShareMessageTemplate string `json:"shareMessageTemplate,omitempty"`
+			ID                   uint                  `json:"id"`
+			Name                 string                `json:"name"`
+			LogoPath             string                `json:"logoPath,omitempty"`
+			ShortDescription     string                `json:"shortDescription,omitempty"`
+			InstagramUsername    string                `json:"instagramUsername,omitempty"`
+			WhatsAppNumber       string                `json:"whatsappNumber,omitempty"`
+			SupportChannel       string                `json:"supportChannel,omitempty"`
+			ShareMessageTemplate string                `json:"shareMessageTemplate,omitempty"`
+			PaymentCards         []paymentCardResponse `json:"paymentCards"`
 		}
 		responseShops := make([]publicShop, len(shops))
 		for i, shop := range shops {
-			responseShops[i] = publicShop{shop.ID, shop.Name, shop.LogoPath, shop.ShortDescription, shop.InstagramUsername, shop.WhatsAppNumber, shop.SupportChannel, shop.ShareMessageTemplate}
+			cards := make([]paymentCardResponse, len(shop.PaymentCards))
+			for j, card := range shop.PaymentCards {
+				cards[j] = paymentCardResponse{card.ID, card.CardNumber, card.PaymentInstructions, card.CardNumber == shop.PaymentCardNumber}
+			}
+			responseShops[i] = publicShop{shop.ID, shop.Name, shop.LogoPath, shop.ShortDescription, shop.InstagramUsername, shop.WhatsAppNumber, shop.SupportChannel, shop.ShareMessageTemplate, cards}
 		}
 
 		return c.JSON(http.StatusOK, map[string]any{

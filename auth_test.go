@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -33,6 +34,9 @@ func newAuthTestServer(t *testing.T) (*gorm.DB, *echo.Echo, config, Admin) {
 	}
 	shop := Shop{Name: "خانه آبی", LogoPath: "/images/shop-blue.svg", PaymentCardNumber: "6037991812345678", PaymentInstructions: "به نام فروشگاه خانه آبی", Active: true}
 	if err := db.Create(&shop).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&ShopPaymentCard{ShopID: shop.ID, CardNumber: shop.PaymentCardNumber, PaymentInstructions: shop.PaymentInstructions}).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Create(&AdminShop{AdminID: admin.ID, ShopID: shop.ID}).Error; err != nil {
@@ -255,5 +259,67 @@ func TestUpdateShopSupport(t *testing.T) {
 	}
 	if response := request(e, http.MethodPatch, "/api/shops/999999/support", `{}`, testOrigin, cookie); response.Code != http.StatusNotFound {
 		t.Fatalf("unowned shop update returned %d", response.Code)
+	}
+}
+
+func TestManageShopPaymentCards(t *testing.T) {
+	db, e, _, _ := newAuthTestServer(t)
+	cookie := loginCookie(t, e)
+	var shop Shop
+	if err := db.First(&shop).Error; err != nil {
+		t.Fatal(err)
+	}
+	path := fmt.Sprintf("/api/shops/%d/payment-cards", shop.ID)
+	body := `{"cardNumber":"۵۰۲۲ ۲۹۱۰ ۱۲۳۴ ۵۶۷۸","paymentInstructions":" به نام حساب دوم "}`
+	if response := request(e, http.MethodPost, path, body, "https://wrong.test", cookie); response.Code != http.StatusForbidden {
+		t.Fatalf("wrong-origin card add returned %d", response.Code)
+	}
+	if response := request(e, http.MethodPost, path, `{"cardNumber":"card 5022 2910 1234 5678","paymentInstructions":"test"}`, testOrigin, cookie); response.Code != http.StatusBadRequest {
+		t.Fatalf("card number with text returned %d: %s", response.Code, response.Body.String())
+	}
+	response := request(e, http.MethodPost, path, body, testOrigin, cookie)
+	if response.Code != http.StatusCreated || !strings.Contains(response.Body.String(), `"cardNumber":"5022291012345678"`) || !strings.Contains(response.Body.String(), `"active":false`) {
+		t.Fatalf("card add returned %d: %s", response.Code, response.Body.String())
+	}
+	var card paymentCardResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &card); err != nil {
+		t.Fatal(err)
+	}
+	if duplicate := request(e, http.MethodPost, path, body, testOrigin, cookie); duplicate.Code != http.StatusConflict {
+		t.Fatalf("duplicate card returned %d: %s", duplicate.Code, duplicate.Body.String())
+	}
+	otherShop := Shop{Name: "فروشگاه کارت دیگر", PaymentCardNumber: "5892101012345678", PaymentInstructions: "دیگر", Active: true}
+	if err := db.Create(&otherShop).Error; err != nil {
+		t.Fatal(err)
+	}
+	otherCard := ShopPaymentCard{ShopID: otherShop.ID, CardNumber: otherShop.PaymentCardNumber, PaymentInstructions: otherShop.PaymentInstructions}
+	if err := db.Create(&otherCard).Error; err != nil {
+		t.Fatal(err)
+	}
+	if hidden := request(e, http.MethodPatch, fmt.Sprintf("%s/%d", path, otherCard.ID), `{"paymentInstructions":"نباید تغییر کند"}`, testOrigin, cookie); hidden.Code != http.StatusNotFound {
+		t.Fatalf("cross-shop card edit returned %d: %s", hidden.Code, hidden.Body.String())
+	}
+	cardPath := fmt.Sprintf("%s/%d", path, card.ID)
+	response = request(e, http.MethodPatch, cardPath, `{"paymentInstructions":"توضیحات ویرایش‌شده"}`, testOrigin, cookie)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "توضیحات ویرایش‌شده") {
+		t.Fatalf("card edit returned %d: %s", response.Code, response.Body.String())
+	}
+	response = request(e, http.MethodPost, cardPath+"/activate", "", testOrigin, cookie)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"active":true`) {
+		t.Fatalf("card activation returned %d: %s", response.Code, response.Body.String())
+	}
+	if err := db.First(&shop, shop.ID).Error; err != nil || shop.PaymentCardNumber != card.CardNumber || shop.PaymentInstructions != "توضیحات ویرایش‌شده" {
+		t.Fatalf("active shop payment profile = %#v, error %v", shop, err)
+	}
+	response = request(e, http.MethodPatch, cardPath, `{"paymentInstructions":"توضیحات آینده"}`, testOrigin, cookie)
+	if response.Code != http.StatusOK {
+		t.Fatalf("active card edit returned %d: %s", response.Code, response.Body.String())
+	}
+	if err := db.First(&shop, shop.ID).Error; err != nil || shop.PaymentInstructions != "توضیحات آینده" {
+		t.Fatalf("active instructions were not projected to shop: %#v, error %v", shop, err)
+	}
+	meResponse := request(e, http.MethodGet, "/api/me", "", "", cookie)
+	if meResponse.Code != http.StatusOK || !strings.Contains(meResponse.Body.String(), `"cardNumber":"5022291012345678","paymentInstructions":"توضیحات آینده","active":true`) {
+		t.Fatalf("me did not include active payment card: %s", meResponse.Body.String())
 	}
 }
