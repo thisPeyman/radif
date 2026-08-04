@@ -640,6 +640,38 @@ func getOrderReceipt(db *gorm.DB, cfg config) echo.HandlerFunc {
 	}
 }
 
+func rotateCustomerLink(db *gorm.DB, cfg config) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		orderID, err := strconv.ParseUint(c.Param("orderID"), 10, 64)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusNotFound, "سفارش پیدا نشد.")
+		}
+		token, err := newOpaqueToken()
+		if err != nil {
+			return err
+		}
+		admin := c.Get(adminContextKey).(*Admin)
+		err = db.Transaction(func(tx *gorm.DB) error {
+			var order Order
+			err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Joins("JOIN shops ON shops.id = orders.shop_id").Joins("JOIN admin_shops ON admin_shops.shop_id = shops.id AND admin_shops.admin_id = ?", admin.ID).Where("orders.id = ?", orderID).First(&order).Error
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return echo.NewHTTPError(http.StatusNotFound, "سفارش پیدا نشد.")
+			}
+			if err != nil {
+				return err
+			}
+			if err := tx.Model(&order).Update("secret_token", token).Error; err != nil {
+				return err
+			}
+			return tx.Create(&PilotEvent{EventName: "order_link_rotated", OrderID: &order.ID, AdminID: &admin.ID}).Error
+		})
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, map[string]string{"customerUrl": cfg.appOrigin + "/o/" + token})
+	}
+}
+
 func publicOrder(db *gorm.DB) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		order, err := findPublicOrder(db, c.Param("token"))

@@ -11,6 +11,7 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type customerDetails struct {
@@ -142,7 +143,8 @@ func submitCustomerDetails(db *gorm.DB, cfg config) echo.HandlerFunc {
 		if err != nil {
 			return err
 		}
-		order, err := findPublicOrder(db, c.Param("token"))
+		token := strings.TrimSpace(c.Param("token"))
+		order, err := findPublicOrder(db, token)
 		if err != nil {
 			return err
 		}
@@ -155,7 +157,20 @@ func submitCustomerDetails(db *gorm.DB, cfg config) echo.HandlerFunc {
 		}
 		defer func() { receipt.discard() }()
 		now := time.Now()
+		var updated Order
 		err = db.Transaction(func(tx *gorm.DB) error {
+			var locked Order
+			err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND secret_token = ?", order.ID, token).First(&locked).Error
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return echo.NewHTTPError(http.StatusNotFound, "سفارش پیدا نشد.")
+			}
+			if err != nil {
+				return err
+			}
+			if locked.CustomerSubmittedAt != nil || locked.Status != waitingInfoStatus {
+				return echo.NewHTTPError(http.StatusConflict, "اطلاعات این سفارش قبلاً ثبت شده است.")
+			}
+			previousStatus := locked.Status
 			updates := map[string]any{
 				"customer_full_name": details.fullName, "customer_mobile": details.mobile,
 				"customer_address": details.address, "customer_postal_code": details.postalCode,
@@ -165,23 +180,22 @@ func submitCustomerDetails(db *gorm.DB, cfg config) echo.HandlerFunc {
 				return err
 			}
 			updates["receipt_file_path"] = receipt.storedName
-			result := tx.Model(&Order{}).Where("id = ? AND customer_submitted_at IS NULL AND status = ?", order.ID, waitingInfoStatus).Updates(updates)
+			result := tx.Model(&locked).Where("customer_submitted_at IS NULL AND status = ?", waitingInfoStatus).Updates(updates)
 			if result.Error != nil {
 				return result.Error
 			}
 			if result.RowsAffected != 1 {
 				return echo.NewHTTPError(http.StatusConflict, "اطلاعات این سفارش قبلاً ثبت شده است.")
 			}
-			return tx.Create(&OrderStatusHistory{OrderID: order.ID, PreviousStatus: order.Status, NewStatus: waitingPaymentStatus}).Error
+			if err := tx.Create(&OrderStatusHistory{OrderID: order.ID, PreviousStatus: previousStatus, NewStatus: waitingPaymentStatus}).Error; err != nil {
+				return err
+			}
+			return tx.Preload("Shop").Preload("Items.Product").Preload("History", func(query *gorm.DB) *gorm.DB { return query.Order("created_at, id") }).First(&updated, order.ID).Error
 		})
 		if err != nil {
 			return err
 		}
 		receipt = nil
-		updated, err := findPublicOrder(db, c.Param("token"))
-		if err != nil {
-			return err
-		}
 		return publicOrderResponse(c, http.StatusOK, updated)
 	}
 }

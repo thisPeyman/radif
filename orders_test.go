@@ -169,6 +169,60 @@ func TestCreateOrderAndRecordCopy(t *testing.T) {
 	}
 }
 
+func TestRotateCustomerLink(t *testing.T) {
+	db, e, cfg, admin := newAuthTestServer(t)
+	cookie := loginCookie(t, e)
+	order := createCustomerTestOrder(t, db, "leaked-customer-token")
+	path := fmt.Sprintf("/api/orders/%d/customer-link/rotate", order.ID)
+
+	if response := request(e, http.MethodPost, path, "", testOrigin, nil); response.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated rotation returned %d", response.Code)
+	}
+	if response := request(e, http.MethodPost, path, "", "https://wrong.test", cookie); response.Code != http.StatusForbidden {
+		t.Fatalf("wrong-origin rotation returned %d", response.Code)
+	}
+	var unchanged Order
+	if err := db.First(&unchanged, order.ID).Error; err != nil || unchanged.SecretToken != order.SecretToken {
+		t.Fatalf("rejected rotation changed token to %q, error %v", unchanged.SecretToken, err)
+	}
+
+	response := request(e, http.MethodPost, path, "", testOrigin, cookie)
+	if response.Code != http.StatusOK {
+		t.Fatalf("rotation returned %d: %s", response.Code, response.Body.String())
+	}
+	var output struct {
+		CustomerURL string `json:"customerUrl"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &output); err != nil {
+		t.Fatal(err)
+	}
+	parsedURL, err := url.Parse(output.CustomerURL)
+	if err != nil || parsedURL.Scheme+"://"+parsedURL.Host != cfg.appOrigin {
+		t.Fatalf("unexpected rotated URL %q", output.CustomerURL)
+	}
+	newToken := strings.TrimPrefix(parsedURL.Path, "/o/")
+	random, err := base64.RawURLEncoding.DecodeString(newToken)
+	if err != nil || len(random) != 32 || newToken == order.SecretToken {
+		t.Fatalf("rotated token has %d random bytes, matches old token %v, error %v", len(random), newToken == order.SecretToken, err)
+	}
+	if old := request(e, http.MethodGet, "/api/o/"+order.SecretToken, "", "", nil); old.Code != http.StatusNotFound {
+		t.Fatalf("old public link returned %d: %s", old.Code, old.Body.String())
+	}
+	if old := request(e, http.MethodPost, "/api/o/"+order.SecretToken+"/support-click", "", testOrigin, nil); old.Code != http.StatusNotFound {
+		t.Fatalf("old public mutation returned %d: %s", old.Code, old.Body.String())
+	}
+	if current := request(e, http.MethodGet, "/api/o/"+newToken, "", "", nil); current.Code != http.StatusOK {
+		t.Fatalf("new public link returned %d: %s", current.Code, current.Body.String())
+	}
+	if err := db.First(&order, order.ID).Error; err != nil || order.SecretToken != newToken {
+		t.Fatalf("stored token = %q, want %q, error %v", order.SecretToken, newToken, err)
+	}
+	var event PilotEvent
+	if err := db.First(&event, "order_id = ? AND event_name = ?", order.ID, "order_link_rotated").Error; err != nil || event.AdminID == nil || *event.AdminID != admin.ID {
+		t.Fatalf("unexpected rotation event: %#v, error %v", event, err)
+	}
+}
+
 func TestPublicSupportRecovery(t *testing.T) {
 	db, e, _, _ := newAuthTestServer(t)
 	order := createCustomerTestOrder(t, db, "support-recovery-token")
@@ -298,6 +352,14 @@ func TestCopyEventRequiresOwnership(t *testing.T) {
 	response := request(e, http.MethodPost, fmt.Sprintf("/api/orders/%d/link-copied", order.ID), "", testOrigin, cookie)
 	if response.Code != http.StatusNotFound {
 		t.Fatalf("cross-shop copy event returned %d", response.Code)
+	}
+	response = request(e, http.MethodPost, fmt.Sprintf("/api/orders/%d/customer-link/rotate", order.ID), "", testOrigin, cookie)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("cross-shop rotation returned %d", response.Code)
+	}
+	var unchanged Order
+	if err := db.First(&unchanged, order.ID).Error; err != nil || unchanged.SecretToken != order.SecretToken {
+		t.Fatalf("cross-shop rotation changed token to %q, error %v", unchanged.SecretToken, err)
 	}
 	response = request(e, http.MethodPatch, fmt.Sprintf("/api/orders/%d", order.ID), fmt.Sprintf(`{"estimatedDeliveryDate":%q}`, time.Now().AddDate(0, 0, 7).Format("2006-01-02")), testOrigin, cookie)
 	if response.Code != http.StatusNotFound {

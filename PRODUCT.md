@@ -183,10 +183,11 @@ already marked as submitted, the public link is immediately a status page.
 
 | Feature | Current behavior | Product reason |
 | --- | --- | --- |
-| One high-entropy link per order | Anyone possessing `/o/:token` can open that order's public experience without an account. | Removes registration, password, SMS, and installation friction from a one-time purchase workflow. |
+| One active high-entropy link per order | Anyone possessing the current `/o/:token` can open that order's public experience without an account. | Removes registration, password, SMS, and installation friction from a one-time purchase workflow. |
 | Order-specific context | The link shows shop identity, products, quantities, total, delivery estimate, current status, and payment instructions. | Builds trust and prevents the customer from submitting information to an ambiguous generic form. |
 | Reusable status destination | The same link changes from an information form into a status page after submission. | Gives the customer one durable place to check progress and reduces support messages. |
-| Continued access | The link currently has no expiry and continues to work after completion or cancellation. | Keeps the pilot experience simple and ensures old customers can revisit their status, at the cost of long-lived-link privacy risk. |
+| Continued access | The link has no expiry and continues to work after completion or cancellation unless an operator rotates it. | Keeps the pilot experience simple and ensures old customers can revisit their status while providing recovery for a leaked link. |
+| Operator rotation | An assigned operator can replace the current link from the order record; the previous token stops working immediately. | Provides a focused recovery action without customer accounts or a token-management system. |
 
 The token is a bearer secret. It should be treated like access to that order and
 must not be exposed in public analytics, logs, screenshots, or support material.
@@ -339,7 +340,8 @@ accidentally during feature work:
   that product appears in old orders, but does not change old unit prices.
 - Customer links are high-entropy secrets but are currently stored so the admin
   can retrieve and copy them again.
-- Public links do not expire and cannot currently be revoked or rotated.
+- Public links do not expire or support disable-only revocation, but an operator
+  can rotate a leaked link and issue a replacement.
 - Customer records and receipts currently have no automatic deletion policy.
 - Uploaded product images live on public URLs; uploaded receipts live behind
   authenticated, shop-scoped access.
@@ -364,9 +366,11 @@ Current protections include:
 
 The current trust limits are equally important:
 
-- A forwarded customer link grants access to that order's public data.
+- A forwarded customer link grants access to that order's public data until an
+  operator rotates it.
 - The public response includes the customer's full name after submission.
-- Links have no expiry, revoke, or rotate action.
+- Links have no expiry or disable action; rotation is the emergency recovery
+  control.
 - There is no MFA, password recovery, session-management screen, audit log,
   application-level field encryption, or customer deletion workflow.
 - Login throttling and uploaded files assume a small, single-instance pilot.
@@ -457,7 +461,7 @@ product discussion should account for.
 | --- | --- |
 | Pilot measurement is incomplete | Successful normal creation records `order_create_started` retrospectively from client-reported elapsed time plus `order_created`; it does not observe abandoned or failed starts. Successful clipboard copies from the post-create screen record `order_link_copied`, while native-share success, historical imports, and later order-detail copies do not. Public support clicks record channel and action type, but link opens, form completion, status views, status changes, and CSV export remain absent. |
 | Shop onboarding is manual | Every new pilot shop still needs technical database/operator work before it can use the product, although the deployment runbook now contains current provisioning SQL. |
-| Customer links live indefinitely | A leaked or forwarded link remains usable and there is no operator recovery action. |
+| Customer links live indefinitely | Links do not expire or support disable-only revocation; a leaked link remains usable until an operator rotates it. |
 | Customer data has indefinite retention | Addresses, mobile numbers, and receipts accumulate without deletion controls or a documented product retention policy. |
 | Statuses are unrestricted | Flexibility is fast, but an operator can skip payment review, move shipped orders backward, or create inconsistent histories. |
 | Receipt-less payment-review copy conflicts | A historical import can start in `waiting_payment` without a receipt. Its public page correctly states that no receipt was uploaded but also uses the generic status message that says the shop is reviewing a receipt. |
@@ -584,12 +588,11 @@ Affected user and workflow step: Shop operator and customer after a link is acci
 
 Why the current product is insufficient: The operator currently has no recovery action. This can become a serious trust objection when asking shops to pay or when expanding beyond friendly pilots.
 
-Smallest test or change:
+Rotation is implemented and records the responsible operator as a pilot event.
+Remaining smallest changes:
 
-Add Rotate customer link.
 Add Disable public link.
-Record both actions in order history.
-Ensure the previous token immediately stops working.
+Expose security actions in order history.
 Write a clear pilot retention policy covering addresses and receipts, even before implementing automatic deletion.
 
 Do not build a sophisticated retention engine yet. First establish a policy and an emergency recovery capability.

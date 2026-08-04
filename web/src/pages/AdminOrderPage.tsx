@@ -1,4 +1,4 @@
-import { LoaderCircle } from "lucide-react";
+import { LoaderCircle, RefreshCw } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { NavLink, useLocation, useParams } from "react-router";
 import { CopyButton, ErrorNotice } from "../components";
@@ -30,8 +30,9 @@ export default function AdminOrderPage() {
   const [internalNote, setInternalNote] = useState("");
   const [editingCustomer, setEditingCustomer] = useState(false);
   const [editingInternal, setEditingInternal] = useState(false);
+  const [linkRotated, setLinkRotated] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState<"" | "status" | "date" | "tracking" | "customer" | "internal">("");
+  const [saving, setSaving] = useState<"" | "status" | "date" | "tracking" | "customer" | "internal" | "link">("");
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -39,6 +40,7 @@ export default function AdminOrderPage() {
     setLoading(true);
     setOrder(null);
     setError("");
+    setLinkRotated(false);
     api<AdminOrder>(`/api/orders/${encodeURIComponent(orderID)}`, { signal: controller.signal })
       .then((response) => {
         setOrder(response);
@@ -92,6 +94,22 @@ export default function AdminOrderPage() {
     setInstagramUsername(order?.instagramUsername ?? "");
     setInternalNote(order?.internalNote ?? "");
     setEditingInternal(false);
+  }
+
+  async function rotateCustomerLink() {
+    if (!order || saving || !window.confirm("لینک فعلی بلافاصله از کار می‌افتد. لینک جدید ساخته شود؟")) return;
+    setSaving("link");
+    setError("");
+    setLinkRotated(false);
+    try {
+      const response = await api<{ customerUrl: string }>(`/api/orders/${order.id}/customer-link/rotate`, { method: "POST" });
+      setOrder((current) => current ? { ...current, customerUrl: response.customerUrl } : current);
+      setLinkRotated(true);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "لینک جدید ساخته نشد.");
+    } finally {
+      setSaving("");
+    }
   }
 
   if (loading) return <div className="grid min-h-[65dvh] place-items-center"><LoaderCircle className="size-7 animate-spin text-teal" aria-label="در حال دریافت سفارش" /></div>;
@@ -253,7 +271,13 @@ export default function AdminOrderPage() {
       <section className="mt-5 rounded-3xl border border-ledger bg-white p-5">
         <h2 className="font-black">لینک مشتری</h2>
         <p className="mt-3 break-all text-left text-xs" dir="ltr">{order.customerUrl}</p>
-        <CopyButton value={order.customerUrl} label="کپی لینک مشتری" />
+        {saving !== "link" && <CopyButton value={order.customerUrl} label="کپی لینک مشتری" />}
+        <p className="mt-3 text-xs leading-6 text-ink/65">اگر لینک فاش شده است، لینک جدید بسازید. لینک فعلی دیگر قابل استفاده نخواهد بود.</p>
+        <button className="secondary-button mt-3 w-full text-error" type="button" onClick={rotateCustomerLink} disabled={Boolean(saving)}>
+          {saving === "link" ? <LoaderCircle className="size-5 animate-spin" aria-hidden="true" /> : <RefreshCw className="size-5" aria-hidden="true" />}
+          {saving === "link" ? "در حال ساخت لینک…" : "ساخت لینک جدید"}
+        </button>
+        {linkRotated && <p className="mt-3 text-sm font-bold text-teal" role="status">لینک جدید ساخته شد و لینک قبلی از کار افتاد.</p>}
       </section>
       <section className="mt-5 rounded-3xl border border-ledger bg-white p-5">
         <h2 className="font-black">تاریخچه وضعیت</h2>
