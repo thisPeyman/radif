@@ -65,31 +65,39 @@ type Product struct {
 }
 
 type Order struct {
-	ID                    uint   `gorm:"primaryKey"`
-	CreateKey             string `gorm:"not null;uniqueIndex"`
-	CreateFingerprint     string `gorm:"not null"`
-	SecretToken           string `gorm:"not null;uniqueIndex"`
-	ShopID                uint   `gorm:"not null;index"`
-	Shop                  Shop
-	PaymentCardNumber     string
-	PaymentInstructions   string
-	Items                 []OrderItem
-	History               []OrderStatusHistory
-	Amount                int64  `gorm:"not null"`
-	EstimatedDeliveryDate string `gorm:"not null"`
-	InstagramUsername     string
-	InternalNote          string
-	CustomerFullName      string
-	CustomerMobile        string
-	CustomerAddress       string
-	CustomerPostalCode    string
-	CustomerNote          string
-	ReceiptFilePath       string
-	Status                string `gorm:"not null;index"`
-	ShipmentTrackingCode  string
-	CustomerSubmittedAt   *time.Time
-	CreatedAt             time.Time
-	UpdatedAt             time.Time
+	ID                             uint   `gorm:"primaryKey"`
+	CreateKey                      string `gorm:"not null;uniqueIndex"`
+	CreateFingerprint              string `gorm:"not null"`
+	SecretToken                    string `gorm:"not null;uniqueIndex"`
+	ShopID                         uint   `gorm:"not null;index"`
+	Shop                           Shop
+	PaymentCardNumber              string
+	PaymentInstructions            string
+	Items                          []OrderItem
+	History                        []OrderStatusHistory
+	Amount                         int64 `gorm:"not null"`
+	InitialPaymentAmount           *int64
+	EstimatedDeliveryDate          string `gorm:"not null"`
+	InstagramUsername              string
+	InternalNote                   string
+	CustomerFullName               string
+	CustomerMobile                 string
+	CustomerAddress                string
+	CustomerPostalCode             string
+	CustomerNote                   string
+	ReceiptFilePath                string
+	FinalPaymentRequestedAt        *time.Time
+	FinalPaymentCardNumber         string
+	FinalPaymentInstructions       string
+	FinalReceiptFilePath           string
+	FinalPaymentConfirmedAt        *time.Time
+	FinalPaymentConfirmedByAdminID *uint
+	FinalPaymentConfirmedByAdmin   *Admin `gorm:"foreignKey:FinalPaymentConfirmedByAdminID"`
+	Status                         string `gorm:"not null;index"`
+	ShipmentTrackingCode           string
+	CustomerSubmittedAt            *time.Time
+	CreatedAt                      time.Time
+	UpdatedAt                      time.Time
 }
 
 type OrderItem struct {

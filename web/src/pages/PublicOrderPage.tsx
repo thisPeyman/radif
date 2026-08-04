@@ -26,7 +26,11 @@ export default function PublicOrderPage() {
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof CustomerDraft, string>>>({});
   const [receipt, setReceipt] = useState<File | null>(null);
   const [receiptError, setReceiptError] = useState("");
+  const [finalReceipt, setFinalReceipt] = useState<File | null>(null);
+  const [finalReceiptError, setFinalReceiptError] = useState("");
+  const [finalError, setFinalError] = useState("");
   const [pending, setPending] = useState(false);
+  const [finalPending, setFinalPending] = useState(false);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const [amountCopyState, setAmountCopyState] = useState<"idle" | "copied" | "failed">("idle");
 
@@ -47,6 +51,9 @@ export default function PublicOrderPage() {
     setFieldErrors({});
     setReceipt(null);
     setReceiptError("");
+    setFinalReceipt(null);
+    setFinalReceiptError("");
+    setFinalError("");
   }, [token]);
 
   useEffect(() => {
@@ -65,12 +72,17 @@ export default function PublicOrderPage() {
 
   async function copyPaymentCardNumber() {
     if (!order) return;
-    try { await navigator.clipboard.writeText(order.paymentCardNumber); setCopyState("copied"); } catch { setCopyState("failed"); }
+    const cardNumber = order.customerSubmitted && order.finalPaymentRequested ? order.finalPaymentCardNumber : order.paymentCardNumber;
+    if (!cardNumber) return;
+    try { await navigator.clipboard.writeText(cardNumber); setCopyState("copied"); } catch { setCopyState("failed"); }
   }
 
   async function copyPaymentAmount() {
     if (!order) return;
-    try { await navigator.clipboard.writeText(String(order.amount * 10)); setAmountCopyState("copied"); } catch { setAmountCopyState("failed"); }
+    const amount = order.initialPaymentAmount
+      ? order.customerSubmitted && order.finalPaymentRequested ? order.finalPaymentAmount ?? 0 : order.initialPaymentAmount
+      : order.amount;
+    try { await navigator.clipboard.writeText(String(amount * 10)); setAmountCopyState("copied"); } catch { setAmountCopyState("failed"); }
   }
 
   async function submitDetails(event: FormEvent) {
@@ -112,6 +124,26 @@ export default function PublicOrderPage() {
     }
   }
 
+  async function submitFinalReceipt(event: FormEvent) {
+    event.preventDefault();
+    if (!finalReceipt) {
+      setFinalReceiptError("تصویر رسید پرداخت نهایی را انتخاب کنید.");
+      return;
+    }
+    const form = new FormData();
+    form.set("receipt", finalReceipt);
+    setFinalPending(true);
+    setFinalError("");
+    try {
+      setOrder(await api<PublicOrder>(`/api/o/${encodeURIComponent(token)}/final-payment/receipt`, { method: "POST", body: form }));
+      setFinalReceipt(null);
+    } catch (reason) {
+      setFinalError(reason instanceof Error ? reason.message : "رسید پرداخت نهایی ثبت نشد.");
+    } finally {
+      setFinalPending(false);
+    }
+  }
+
   function supportClicked() {
     if (!order?.support) return;
     if (order.support.channel === "instagram" && navigator.clipboard) void navigator.clipboard.writeText(order.support.message).catch(() => undefined);
@@ -143,6 +175,10 @@ export default function PublicOrderPage() {
     );
   }
 
+  const initialPaymentConfirmed = Boolean(order?.history.some((entry) => entry.status === "paid"));
+  const initialPaymentActive = Boolean(order?.initialPaymentAmount && !order.customerSubmitted && order.customerSubmissionAllowed);
+  const finalPaymentActive = Boolean(order?.initialPaymentAmount && order.customerSubmitted && order.finalPaymentRequested && !order.finalReceiptUploaded && !order.finalPaymentConfirmed && order.status !== "cancelled");
+
   return (
     <div className="app-viewport min-h-dvh px-5 pb-10 pt-[max(1.5rem,env(safe-area-inset-top))] text-ink sm:min-h-[760px] sm:px-6">
       <a
@@ -170,8 +206,8 @@ export default function PublicOrderPage() {
 
           <section className="mt-7 border-r-4 border-teal bg-white px-5 py-4 shadow-sm">
             <p className="text-xs font-bold text-ink/70">وضعیت سفارش</p>
-            <p className="mt-1 text-lg font-black text-teal">{publicStatusLabels[order.status] ?? order.status}</p>
-            {order.status === "waiting_payment" && order.receiptUploaded && <p className="mt-2 text-sm text-ink/70">فروشگاه در حال بررسی رسید پرداخت شماست.</p>}
+            <p className="mt-1 text-lg font-black text-teal">{order.initialPaymentAmount && order.status === "paid" ? "پرداخت اول تأیید شد" : publicStatusLabels[order.status] ?? order.status}</p>
+            {order.status === "waiting_payment" && order.receiptUploaded && <p className="mt-2 text-sm text-ink/70">فروشگاه در حال بررسی {order.initialPaymentAmount ? "رسید پرداخت اول" : "رسید پرداخت"} شماست.</p>}
             {order.customerSubmitted && <p className="mt-2 text-xs text-ink/60">آخرین به‌روزرسانی: {persianDateTime(order.updatedAt)}</p>}
           </section>
 
@@ -201,43 +237,118 @@ export default function PublicOrderPage() {
             </div>
           </section>
 
-          <button
-            className="mt-5 flex w-full items-center justify-between gap-4 rounded-2xl border border-teal/15 bg-white px-4 py-3.5 text-ink shadow-sm transition hover:border-teal/30 hover:shadow-md active:scale-[0.99]"
-            type="button"
-            onClick={copyPaymentAmount}
-          >
-            <span className="text-right">
-              <span className="block text-xs font-bold text-ink/60">مبلغ سفارش</span>
-              <strong className="mt-1 block text-lg">{persianNumber(order.amount)} تومان</strong>
-              <span className="mt-0.5 block text-xs font-bold text-ink/45">{persianNumber(order.amount * 10)} ریال</span>
-            </span>
-            <span className="flex shrink-0 items-center gap-2 rounded-xl bg-teal/8 px-3 py-2 text-xs font-black text-teal">
-              {amountCopyState === "copied" ? <ClipboardCheck className="size-4" aria-hidden="true" /> : <Clipboard className="size-4" aria-hidden="true" />}
-              {amountCopyState === "copied" ? "کپی شد" : "کپی"}
-            </span>
-          </button>
+          {order.initialPaymentAmount ? (
+            <section className="mt-5 rounded-3xl border border-ledger bg-white p-5 shadow-sm">
+              <div className="flex items-end justify-between gap-4 border-b border-ledger pb-4">
+                <div><p className="text-xs font-black text-teal">برنامه پرداخت</p><h2 className="mt-1 text-lg font-black">پرداخت در دو مرحله</h2></div>
+                <div className="text-left"><p className="text-xs font-bold text-ink/50">مبلغ کل</p><p className="mt-1 font-black">{persianNumber(order.amount)} تومان</p></div>
+              </div>
+              <ol className="mt-5">
+                <li className="relative pr-12 pb-4">
+                  <span className={`absolute right-[1.15rem] top-9 h-[calc(100%-1rem)] w-0.5 ${initialPaymentConfirmed ? "bg-teal/35" : "bg-ledger"}`} aria-hidden="true" />
+                  <span className={`absolute right-0 top-1 grid size-10 place-items-center rounded-full border-4 border-white text-sm font-black shadow-sm ${initialPaymentConfirmed ? "bg-teal text-white" : initialPaymentActive ? "bg-saffron text-ink ring-4 ring-saffron/15" : "bg-ledger text-ink/55"}`} aria-hidden="true">
+                    {initialPaymentConfirmed ? <Check className="size-5" /> : "۱"}
+                  </span>
+                  <div className={`rounded-2xl border p-4 ${initialPaymentActive ? "border-2 border-saffron bg-saffron/10 shadow-sm" : initialPaymentConfirmed ? "border-teal/20 bg-teal/6" : "border-ledger bg-ledger/25"}`}>
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="font-black">پرداخت اول</p>
+                      <span className={`rounded-full px-2.5 py-1 text-xs font-black ${initialPaymentActive ? "bg-saffron text-ink" : initialPaymentConfirmed ? "bg-teal text-white" : "bg-white text-ink/60"}`}>
+                        {initialPaymentActive ? "الان پرداخت کنید" : initialPaymentConfirmed ? "تأیید شد" : order.customerSubmitted ? "رسید در حال بررسی" : "بسته شده"}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-xl font-black">{persianNumber(order.initialPaymentAmount)} <span className="text-sm">تومان</span></p>
+                    {initialPaymentActive && (
+                      <button className="mt-3 flex min-h-11 w-full items-center justify-between rounded-xl bg-white px-3 text-sm font-black text-teal shadow-sm" type="button" onClick={copyPaymentAmount}>
+                        <span>{persianNumber(order.initialPaymentAmount * 10)} ریال</span>
+                        <span className="flex items-center gap-1.5">{amountCopyState === "copied" ? <ClipboardCheck className="size-4" aria-hidden="true" /> : <Clipboard className="size-4" aria-hidden="true" />}{amountCopyState === "copied" ? "کپی شد" : "کپی مبلغ"}</span>
+                      </button>
+                    )}
+                  </div>
+                </li>
+                <li className="relative pr-12">
+                  <span className={`absolute right-0 top-1 grid size-10 place-items-center rounded-full border-4 border-white text-sm font-black shadow-sm ${order.finalPaymentConfirmed ? "bg-teal text-white" : finalPaymentActive ? "bg-saffron text-ink ring-4 ring-saffron/15" : order.finalReceiptUploaded ? "bg-saffron text-ink" : "bg-ledger text-ink/55"}`} aria-hidden="true">
+                    {order.finalPaymentConfirmed ? <Check className="size-5" /> : "۲"}
+                  </span>
+                  <div className={`rounded-2xl border p-4 ${finalPaymentActive ? "border-2 border-saffron bg-saffron/10 shadow-sm" : order.finalPaymentConfirmed ? "border-teal/20 bg-teal/6" : order.finalReceiptUploaded ? "border-saffron/35 bg-saffron/8" : "border-ledger bg-ledger/25"}`}>
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="font-black">پرداخت نهایی</p>
+                      <span className={`rounded-full px-2.5 py-1 text-xs font-black ${finalPaymentActive ? "bg-saffron text-ink" : order.finalPaymentConfirmed ? "bg-teal text-white" : order.finalReceiptUploaded ? "bg-saffron/40 text-ink" : "bg-white text-ink/60"}`}>
+                        {order.status === "cancelled" ? "بسته شده" : order.finalPaymentConfirmed ? "تسویه شد" : order.finalReceiptUploaded ? "رسید در حال بررسی" : finalPaymentActive ? "الان پرداخت کنید" : "پس از آماده‌سازی"}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-xl font-black">{persianNumber(order.finalPaymentAmount ?? 0)} <span className="text-sm">تومان</span></p>
+                    {finalPaymentActive && (
+                      <button className="mt-3 flex min-h-11 w-full items-center justify-between rounded-xl bg-white px-3 text-sm font-black text-teal shadow-sm" type="button" onClick={copyPaymentAmount}>
+                        <span>{persianNumber((order.finalPaymentAmount ?? 0) * 10)} ریال</span>
+                        <span className="flex items-center gap-1.5">{amountCopyState === "copied" ? <ClipboardCheck className="size-4" aria-hidden="true" /> : <Clipboard className="size-4" aria-hidden="true" />}{amountCopyState === "copied" ? "کپی شد" : "کپی مبلغ"}</span>
+                      </button>
+                    )}
+                    {!order.finalPaymentRequested && order.status !== "cancelled" && <p className="mt-2 text-xs leading-6 text-ink/55">فروشگاه پس از آماده‌شدن سفارش، زمان پرداخت را اعلام می‌کند.</p>}
+                  </div>
+                </li>
+              </ol>
+            </section>
+          ) : (
+            <button
+              className="mt-5 flex w-full items-center justify-between gap-4 rounded-2xl border border-teal/15 bg-white px-4 py-3.5 text-ink shadow-sm transition hover:border-teal/30 hover:shadow-md active:scale-[0.99]"
+              type="button"
+              onClick={copyPaymentAmount}
+            >
+              <span className="text-right">
+                <span className="block text-xs font-bold text-ink/60">مبلغ سفارش</span>
+                <strong className="mt-1 block text-lg">{persianNumber(order.amount)} تومان</strong>
+                <span className="mt-0.5 block text-xs font-bold text-ink/45">{persianNumber(order.amount * 10)} ریال</span>
+              </span>
+              <span className="flex shrink-0 items-center gap-2 rounded-xl bg-teal/8 px-3 py-2 text-xs font-black text-teal">
+                {amountCopyState === "copied" ? <ClipboardCheck className="size-4" aria-hidden="true" /> : <Clipboard className="size-4" aria-hidden="true" />}
+                {amountCopyState === "copied" ? "کپی شد" : "کپی"}
+              </span>
+            </button>
+          )}
           {amountCopyState === "failed" && <p className="mt-2 text-sm text-error" role="alert">کپی خودکار ممکن نشد؛ دوباره تلاش کنید.</p>}
 
-          <section className="mt-6 rounded-3xl border border-ledger bg-white p-5">
-            <h2 className="text-sm font-black">اطلاعات پرداخت فروشگاه</h2>
-            <p className="mt-2 text-sm leading-7 text-ink/70">مبلغ سفارش را به شماره کارت زیر واریز کنید.</p>
+          {(!order.initialPaymentAmount || !order.customerSubmitted || (order.finalPaymentRequested && !order.finalReceiptUploaded && !order.finalPaymentConfirmed && order.status !== "cancelled")) && <section className="mt-6 rounded-3xl border border-ledger bg-white p-5">
+            <h2 className="text-sm font-black">{order.initialPaymentAmount ? order.customerSubmitted ? "پرداخت نهایی" : "پرداخت اول" : "اطلاعات پرداخت فروشگاه"}</h2>
+            <p className="mt-2 text-sm leading-7 text-ink/70">{order.initialPaymentAmount ? `مبلغ ${persianNumber(order.customerSubmitted ? order.finalPaymentAmount ?? 0 : order.initialPaymentAmount)} تومان را به شماره کارت زیر واریز کنید.` : "مبلغ سفارش را به شماره کارت زیر واریز کنید."}</p>
             <button
-              className="mt-3 flex min-h-16 w-full items-center justify-between gap-3 rounded-2xl border-2 border-saffron/60 bg-saffron/10 px-4 py-3 text-ink"
+              className={`${order.initialPaymentAmount ? "mt-4" : "mt-3"} flex min-h-16 w-full items-center justify-between gap-3 rounded-2xl border-2 border-saffron/60 bg-saffron/10 px-4 py-3 text-ink`}
               type="button"
               onClick={copyPaymentCardNumber}
             >
               <span className="text-right">
                 <span className="block text-xs font-bold text-ink/60">شماره کارت</span>
-                <strong className="mt-1 block select-all text-lg tracking-wider" dir="ltr">{order.paymentCardNumber.match(/.{1,4}/g)?.join(" ")}</strong>
+                <strong className="mt-1 block select-all text-lg tracking-wider" dir="ltr">{(order.customerSubmitted && order.finalPaymentRequested ? order.finalPaymentCardNumber : order.paymentCardNumber)?.match(/.{1,4}/g)?.join(" ")}</strong>
               </span>
               <span className="flex shrink-0 items-center gap-2 text-sm font-black text-teal">
                 {copyState === "copied" ? <ClipboardCheck className="size-5" aria-hidden="true" /> : <Clipboard className="size-5" aria-hidden="true" />}
                 {copyState === "copied" ? "کپی شد" : "کپی"}
               </span>
             </button>
-            <p className="mt-3 whitespace-pre-wrap text-sm font-bold leading-7 text-ink/80">{order.paymentInstructions}</p>
+            <p className="mt-3 whitespace-pre-wrap text-sm font-bold leading-7 text-ink/80">{order.customerSubmitted && order.finalPaymentRequested ? order.finalPaymentInstructions : order.paymentInstructions}</p>
             {copyState === "failed" && <p className="mt-2 text-sm text-error" role="alert">کپی خودکار ممکن نشد؛ شماره کارت بالا را نگه دارید و انتخاب کنید.</p>}
-          </section>
+          </section>}
+
+          {order.initialPaymentAmount && order.customerSubmitted && order.finalPaymentRequested && !order.finalPaymentConfirmed && (
+            order.finalReceiptUploaded ? (
+              <section className="mt-5 rounded-3xl border border-saffron/40 bg-saffron/10 p-5" aria-live="polite">
+                <div className="flex items-center gap-3"><span className="grid size-11 place-items-center rounded-2xl bg-saffron text-ink"><ClipboardCheck className="size-5" aria-hidden="true" /></span><div><h2 className="font-black">رسید نهایی ارسال شد</h2><p className="mt-1 text-sm text-ink/65">فروشگاه در حال بررسی پرداخت نهایی است.</p></div></div>
+              </section>
+            ) : order.status !== "cancelled" ? (
+              <form className="mt-5 rounded-3xl border-2 border-saffron/55 bg-white p-5 shadow-sm" onSubmit={submitFinalReceipt}>
+                <p className="text-xs font-black text-saffron">مرحله دوم</p>
+                <h2 className="mt-1 text-xl font-black">رسید پرداخت نهایی را بفرستید</h2>
+                <p className="mt-2 text-sm leading-7 text-ink/70">پس از واریز، تصویر رسید را بررسی و همین‌جا ثبت کنید.</p>
+                <div className="mt-4"><ReceiptPicker id="final-payment-receipt" file={finalReceipt} onChange={(file) => { setFinalReceipt(file); setFinalReceiptError(""); }} /></div>
+                {finalReceiptError && <p className="mt-2 text-sm text-error" role="alert">{finalReceiptError}</p>}
+                <p className="mt-2 text-xs leading-6 text-ink/60">رسید پس از ارسال قابل جایگزینی نیست.</p>
+                {finalError && <div className="mt-3"><ErrorNotice>{finalError}</ErrorNotice></div>}
+                <button className="primary-button mt-4 w-full" type="submit" disabled={finalPending}>
+                  {finalPending ? <LoaderCircle className="size-5 animate-spin" aria-hidden="true" /> : <Check className="size-5" aria-hidden="true" />}
+                  {finalPending ? "در حال ارسال…" : "ارسال رسید پرداخت نهایی"}
+                </button>
+              </form>
+            ) : null
+          )}
 
           {order.customerSubmissionAllowed && (
             <form className="mt-8 space-y-5" onSubmit={submitDetails} noValidate>
@@ -309,7 +420,7 @@ export default function PublicOrderPage() {
                 <textarea id="customer-note" className="field min-h-24 py-3" value={draft.note} onChange={(event) => updateDraft("note", event.target.value)} />
               </label>
               <div>
-                <span className="mb-2 block text-sm font-bold">تصویر رسید پرداخت</span>
+                <span className="mb-2 block text-sm font-bold">تصویر {order.initialPaymentAmount ? "رسید پرداخت اول" : "رسید پرداخت"}</span>
                 <ReceiptPicker id="customer-receipt" file={receipt} onChange={(file) => { setReceipt(file); setReceiptError(""); }} />
                 {receiptError && <span className="mt-2 block text-sm text-error" role="alert">{receiptError}</span>}
                 <span className="mt-2 block text-xs leading-6 text-ink/65">بارگذاری رسید به معنی تأیید پرداخت نیست؛ فروشگاه آن را بررسی می‌کند.</span>
@@ -317,7 +428,7 @@ export default function PublicOrderPage() {
               {error && <ErrorNotice>{error}</ErrorNotice>}
               <button className="primary-button w-full" type="submit" disabled={pending}>
                 {pending ? <LoaderCircle className="size-5 animate-spin" aria-hidden="true" /> : <Check className="size-5" aria-hidden="true" />}
-                {pending ? "در حال ثبت…" : "ثبت اطلاعات و ارسال رسید"}
+                {pending ? "در حال ثبت…" : order.initialPaymentAmount ? "ثبت اطلاعات و ارسال رسید اول" : "ثبت اطلاعات و ارسال رسید"}
               </button>
             </form>
           )}
@@ -339,7 +450,7 @@ export default function PublicOrderPage() {
                   <p className="mt-1 text-sm text-ink/70">فروشگاه سفارش شما را بررسی می‌کند.</p>
                 </div>
               </div>
-              <p className="mt-4 border-t border-teal/15 pt-4 text-sm font-bold">{order.receiptUploaded ? "رسید پرداخت بارگذاری شده است." : "هنوز رسیدی بارگذاری نشده است."}</p>
+              <p className="mt-4 border-t border-teal/15 pt-4 text-sm font-bold">{order.receiptUploaded ? order.initialPaymentAmount ? "رسید پرداخت اول بارگذاری شده است." : "رسید پرداخت بارگذاری شده است." : "هنوز رسیدی بارگذاری نشده است."}</p>
               {order.customerSummary && (
                 <dl className="mt-4 grid gap-3 border-t border-teal/15 pt-4 text-sm">
                   <div><dt className="text-xs font-bold text-ink/60">گیرنده</dt><dd className="mt-1 font-bold">{order.customerSummary.fullName}</dd></div>
@@ -364,7 +475,7 @@ export default function PublicOrderPage() {
                 {order.history.map((entry, index) => (
                   <li className="relative pb-5 last:pb-0" key={`${entry.createdAt}-${index}`}>
                     <span className="absolute -right-[1.7rem] top-1 size-3 rounded-full bg-teal" />
-                    <p className="font-bold">{publicStatusLabels[entry.status] ?? entry.status}</p>
+                    <p className="font-bold">{order.initialPaymentAmount && entry.status === "paid" ? "پرداخت اول تأیید شد" : publicStatusLabels[entry.status] ?? entry.status}</p>
                     <p className="mt-1 text-xs text-ink/60">{persianDateTime(entry.createdAt)}</p>
                   </li>
                 ))}

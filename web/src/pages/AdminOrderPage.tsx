@@ -1,4 +1,4 @@
-import { LoaderCircle, RefreshCw } from "lucide-react";
+import { BadgeCheck, Clipboard, ClipboardCheck, CreditCard, LoaderCircle, RefreshCw, Send } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { NavLink, useLocation, useParams } from "react-router";
 import { CopyButton, ErrorNotice } from "../components";
@@ -32,7 +32,8 @@ export default function AdminOrderPage() {
   const [editingInternal, setEditingInternal] = useState(false);
   const [linkRotated, setLinkRotated] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState<"" | "status" | "date" | "tracking" | "customer" | "internal" | "link">("");
+  const [saving, setSaving] = useState<"" | "status" | "date" | "tracking" | "customer" | "internal" | "link" | "requestFinal" | "confirmFinal">("");
+  const [finalCopyState, setFinalCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -41,6 +42,7 @@ export default function AdminOrderPage() {
     setOrder(null);
     setError("");
     setLinkRotated(false);
+    setFinalCopyState("idle");
     api<AdminOrder>(`/api/orders/${encodeURIComponent(orderID)}`, { signal: controller.signal })
       .then((response) => {
         setOrder(response);
@@ -58,6 +60,8 @@ export default function AdminOrderPage() {
 
   async function saveChanges(section: "status" | "date" | "tracking" | "customer" | "internal", changes: Record<string, string>) {
     if (!order) return;
+    if (section === "status" && changes.status === "shipped" && order.initialPaymentAmount && !order.finalPaymentConfirmed
+      && !window.confirm("پرداخت نهایی این سفارش هنوز تأیید نشده است. با این حال سفارش ارسال‌شده ثبت شود؟")) return;
     setSaving(section);
     setError("");
     try {
@@ -105,6 +109,7 @@ export default function AdminOrderPage() {
       const response = await api<{ customerUrl: string }>(`/api/orders/${order.id}/customer-link/rotate`, { method: "POST" });
       setOrder((current) => current ? { ...current, customerUrl: response.customerUrl } : current);
       setLinkRotated(true);
+      setFinalCopyState("idle");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "لینک جدید ساخته نشد.");
     } finally {
@@ -112,8 +117,54 @@ export default function AdminOrderPage() {
     }
   }
 
+  function finalPaymentMessage(value: AdminOrder) {
+    return `سلام، لطفاً باقی‌مانده سفارش ${value.orderCode} به مبلغ ${persianNumber(value.finalPaymentAmount ?? 0)} تومان را پرداخت کنید و تصویر رسید را از لینک زیر بفرستید:\n${value.customerUrl}`;
+  }
+
+  async function copyFinalPaymentMessage(value = order) {
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(finalPaymentMessage(value));
+      setFinalCopyState("copied");
+    } catch {
+      setFinalCopyState("failed");
+    }
+  }
+
+  async function requestFinalPayment() {
+    if (!order || saving || !window.confirm("درخواست پرداخت نهایی دائمی است و قابل لغو نیست. درخواست ثبت شود؟")) return;
+    setSaving("requestFinal");
+    setError("");
+    try {
+      const response = await api<AdminOrder>(`/api/orders/${order.id}/final-payment/request`, { method: "POST" });
+      setOrder(response);
+      await copyFinalPaymentMessage(response);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "درخواست پرداخت نهایی ثبت نشد.");
+    } finally {
+      setSaving("");
+    }
+  }
+
+  async function confirmFinalPayment() {
+    if (!order || saving || !window.confirm("رسید بررسی شده و پرداخت نهایی تأیید می‌شود؟")) return;
+    setSaving("confirmFinal");
+    setError("");
+    try {
+      setOrder(await api<AdminOrder>(`/api/orders/${order.id}/final-payment/confirm`, { method: "POST" }));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "پرداخت نهایی تأیید نشد.");
+    } finally {
+      setSaving("");
+    }
+  }
+
   if (loading) return <div className="grid min-h-[65dvh] place-items-center"><LoaderCircle className="size-7 animate-spin text-teal" aria-label="در حال دریافت سفارش" /></div>;
   if (!order) return <section className="page-content"><ErrorNotice>{error || "سفارش پیدا نشد."}</ErrorNotice></section>;
+  const finalRequestAllowed = order.customerSubmitted
+    && order.receiptUploaded
+    && order.history.some((entry) => entry.newStatus === "paid")
+    && ["paid", "preparing", "shipped"].includes(order.status);
 
   return (
     <section className="page-content">
@@ -128,7 +179,8 @@ export default function AdminOrderPage() {
           {Object.entries(adminStatusLabels).map(([value, label]) => {
             const infoAlreadySubmitted = value === "waiting_info" && order.customerSubmitted;
             const missingReceipt = value === "waiting_payment" && !order.receiptUploaded;
-            return <option key={value} value={value} disabled={infoAlreadySubmitted || missingReceipt}>{label}{infoAlreadySubmitted ? " (اطلاعات ثبت شده)" : missingReceipt ? " (نیازمند رسید)" : ""}</option>;
+            const shownLabel = order.initialPaymentAmount && value === "paid" ? "پرداخت اول تأیید شده" : label;
+            return <option key={value} value={value} disabled={infoAlreadySubmitted || missingReceipt}>{shownLabel}{infoAlreadySubmitted ? " (اطلاعات ثبت شده)" : missingReceipt ? " (نیازمند رسید)" : ""}</option>;
           })}
         </select>
         <button className="primary-button mt-3 w-full" type="button" onClick={() => saveChanges("status", { status })} disabled={Boolean(saving) || status === order.status}>
@@ -188,15 +240,78 @@ export default function AdminOrderPage() {
         )}
       </section>
 
-      <section className="mt-5 rounded-3xl border border-ledger bg-white p-5">
-        <h2 className="font-black">رسید پرداخت</h2>
-        {order.receiptUploaded && order.receiptUrl ? (
-          <>
-            <img className="mt-4 max-h-96 w-full rounded-2xl bg-ledger object-contain" src={order.receiptUrl} alt="رسید پرداخت مشتری" />
-            <a className="secondary-button mt-3 w-full" href={order.receiptUrl} target="_blank" rel="noreferrer">نمایش در اندازه کامل</a>
-          </>
-        ) : (
-          <p className="mt-3 text-sm text-ink/65">رسیدی بارگذاری نشده است.</p>
+      <section className="mt-5 overflow-hidden rounded-3xl border border-ledger bg-white">
+        <div className="p-5">
+          <div className="flex items-center gap-3">
+            <span className="grid size-10 place-items-center rounded-2xl bg-teal/10 text-teal"><CreditCard className="size-5" aria-hidden="true" /></span>
+            <div><h2 className="font-black">پرداخت‌ها و رسیدها</h2><p className="mt-0.5 text-xs text-ink/60">مبلغ کل {persianNumber(order.amount)} تومان</p></div>
+          </div>
+          {order.initialPaymentAmount && (
+            <div className="mt-4 grid grid-cols-2 overflow-hidden rounded-2xl border border-teal/15 bg-teal/6">
+              <div className="p-3"><p className="text-xs font-bold text-ink/55">پرداخت اول</p><p className="mt-1 font-black text-teal">{persianNumber(order.initialPaymentAmount)} تومان</p></div>
+              <div className="border-r border-dashed border-teal/25 p-3"><p className="text-xs font-bold text-ink/55">پرداخت نهایی</p><p className="mt-1 font-black">{persianNumber(order.finalPaymentAmount ?? 0)} تومان</p></div>
+            </div>
+          )}
+        </div>
+        <div className="border-t border-ledger p-5">
+          <p className="text-xs font-black text-ink/55">{order.initialPaymentAmount ? "رسید پرداخت اول" : "رسید پرداخت"}</p>
+          {order.receiptUploaded && order.receiptUrl ? (
+            <>
+              <img className="mt-3 max-h-96 w-full rounded-2xl bg-ledger object-contain" src={order.receiptUrl} alt={order.initialPaymentAmount ? "رسید پرداخت اول مشتری" : "رسید پرداخت مشتری"} />
+              <a className="secondary-button mt-3 w-full" href={order.receiptUrl} target="_blank" rel="noreferrer">نمایش در اندازه کامل</a>
+            </>
+          ) : <p className="mt-2 text-sm text-ink/65">رسیدی بارگذاری نشده است.</p>}
+        </div>
+        {order.initialPaymentAmount && (
+          <div className="border-t-2 border-dashed border-saffron/45 bg-saffron/6 p-5">
+            <div className="flex items-center justify-between gap-3"><p className="font-black">پرداخت نهایی</p>{order.finalPaymentConfirmed && <span className="rounded-full bg-teal px-3 py-1 text-xs font-black text-white">تسویه شد</span>}</div>
+            {!order.finalPaymentRequested && (
+              <>
+                <p className="mt-2 text-sm leading-7 text-ink/70">پس از تأیید پرداخت اول، درخواست را ثبت کنید. شماره کارت فعال همان لحظه برای این سفارش نگه داشته می‌شود.</p>
+                {!finalRequestAllowed && <p className="mt-3 rounded-2xl bg-white p-3 text-sm font-bold text-error">ابتدا رسید و اطلاعات مشتری را دریافت کنید و پرداخت اول را با وضعیت «پرداخت اول تأیید شده» ثبت کنید.</p>}
+                <button className="primary-button mt-4 w-full" type="button" onClick={requestFinalPayment} disabled={Boolean(saving) || !finalRequestAllowed}>
+                  {saving === "requestFinal" ? <LoaderCircle className="size-5 animate-spin" aria-hidden="true" /> : <Send className="size-5" aria-hidden="true" />}
+                  {saving === "requestFinal" ? "در حال ثبت…" : "درخواست پرداخت نهایی"}
+                </button>
+                <p className="mt-2 text-center text-xs font-bold text-ink/55">این درخواست قابل لغو نیست.</p>
+              </>
+            )}
+            {order.finalPaymentRequested && (
+              <>
+                <dl className="mt-4 grid gap-3 rounded-2xl bg-white p-4 text-sm">
+                  <div><dt className="text-xs font-bold text-ink/55">مبلغ باقی‌مانده</dt><dd className="mt-1 font-black">{persianNumber(order.finalPaymentAmount ?? 0)} تومان</dd></div>
+                  <div><dt className="text-xs font-bold text-ink/55">شماره کارت ثبت‌شده</dt><dd className="mt-1 font-black tracking-wider" dir="ltr">{order.finalPaymentCardNumber.match(/.{1,4}/g)?.join(" ")}</dd></div>
+                  {order.finalPaymentRequestedAt && <div><dt className="text-xs font-bold text-ink/55">زمان درخواست</dt><dd className="mt-1 font-bold">{persianDateTime(order.finalPaymentRequestedAt)}</dd></div>}
+                </dl>
+                <button className="secondary-button mt-3 w-full" type="button" onClick={() => copyFinalPaymentMessage()}>
+                  {finalCopyState === "copied" ? <ClipboardCheck className="size-5" aria-hidden="true" /> : <Clipboard className="size-5" aria-hidden="true" />}
+                  {finalCopyState === "copied" ? "پیام کپی شد" : "کپی پیام برای مشتری"}
+                </button>
+                {finalCopyState === "failed" && <p className="mt-2 text-sm text-error">کپی خودکار ممکن نشد؛ لینک مشتری را جداگانه بفرستید.</p>}
+                <div className="mt-5 border-t border-saffron/25 pt-5">
+                  <p className="text-xs font-black text-ink/55">رسید پرداخت نهایی</p>
+                  {order.finalReceiptUploaded && order.finalReceiptUrl ? (
+                    <>
+                      <img className="mt-3 max-h-96 w-full rounded-2xl bg-white object-contain" src={order.finalReceiptUrl} alt="رسید پرداخت نهایی مشتری" />
+                      <a className="secondary-button mt-3 w-full" href={order.finalReceiptUrl} target="_blank" rel="noreferrer">نمایش در اندازه کامل</a>
+                    </>
+                  ) : <p className="mt-2 text-sm leading-7 text-ink/65">مشتری هنوز رسید نهایی را از لینک سفارش نفرستاده است.</p>}
+                </div>
+                {order.finalReceiptUploaded && !order.finalPaymentConfirmed && (
+                  <button className="primary-button mt-4 w-full" type="button" onClick={confirmFinalPayment} disabled={Boolean(saving) || order.status === "cancelled"}>
+                    {saving === "confirmFinal" ? <LoaderCircle className="size-5 animate-spin" aria-hidden="true" /> : <BadgeCheck className="size-5" aria-hidden="true" />}
+                    {saving === "confirmFinal" ? "در حال تأیید…" : "تأیید پرداخت نهایی"}
+                  </button>
+                )}
+                {order.finalPaymentConfirmed && (
+                  <p className="mt-4 flex items-center gap-2 rounded-2xl bg-teal/10 p-4 text-sm font-bold text-teal">
+                    <BadgeCheck className="size-5 shrink-0" aria-hidden="true" />
+                    تأیید شده{order.finalPaymentConfirmedByAdminName ? ` توسط ${order.finalPaymentConfirmedByAdminName}` : ""}{order.finalPaymentConfirmedAt ? ` · ${persianDateTime(order.finalPaymentConfirmedAt)}` : ""}
+                  </p>
+                )}
+              </>
+            )}
+          </div>
         )}
       </section>
       <section className="mt-5 rounded-3xl border border-ledger bg-white p-5">
@@ -289,7 +404,7 @@ export default function AdminOrderPage() {
           {order.history.map((entry, index) => (
             <li className="relative pb-5 last:pb-0" key={`${entry.createdAt}-${index}`}>
               <span className="absolute -right-[1.7rem] top-1 size-3 rounded-full bg-teal" />
-              <p className="font-bold">{adminStatusLabels[entry.newStatus] ?? entry.newStatus}</p>
+              <p className="font-bold">{order.initialPaymentAmount && entry.newStatus === "paid" ? "پرداخت اول تأیید شده" : adminStatusLabels[entry.newStatus] ?? entry.newStatus}</p>
               <p className="mt-1 text-xs text-ink/60">{persianDateTime(entry.createdAt)}{entry.changedByAdminName ? ` · ${entry.changedByAdminName}` : ""}</p>
             </li>
           ))}

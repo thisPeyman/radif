@@ -73,7 +73,7 @@ in-app browser. They need to:
 
 - Recognize the shop and order before sharing personal information.
 - See the products, amount, delivery estimate, and payment instructions.
-- Submit delivery details and one payment receipt without creating an account.
+- Submit delivery details and the requested payment receipts without creating an account.
 - Know that the order was registered.
 - Revisit the same link for fulfillment status and a tracking code.
 
@@ -91,9 +91,10 @@ Sale is agreed in Instagram DMs
 -> Radif creates an order code and secret customer link
 -> Radif copies a prepared message and the operator sends or shares it in the DM
 -> customer sees the order and card-transfer instructions
--> customer submits delivery details and one receipt together
+-> customer submits delivery details and the first receipt together
 -> order waits for manual payment confirmation
 -> operator reviews the receipt and manages fulfillment
+-> for a split-payment order, operator may request and confirm the final receipt
 -> customer revisits the same link for status and tracking
 ```
 
@@ -151,6 +152,7 @@ not browse it and cannot build carts themselves.
 | Multi-product selection | The operator selects up to 50 distinct active products and quantities from 1 to 99. | Supports realistic Instagram sales without requiring a cart or full checkout system. |
 | Automatic total | The interface calculates the total from product prices and quantities. | Removes repetitive arithmetic and speeds up repeat orders. |
 | Editable amount | The operator may override the calculated total with a positive toman amount. | Supports negotiated prices and one-off adjustments common in DM sales without building discounts or promotions. |
+| Optional split payment | For a new order, the operator may enter an initial amount below the total; Radif derives and clearly shows the exact remainder. Existing and imported orders stay single-payment. | Supports shops that collect part of the price before preparation and the remainder before dispatch without adding a general installment engine. |
 | Estimated delivery date | A required Persian-friendly date is visible to both operator and customer. The UI allows today through roughly two years ahead; the API requires today or later. | Creates a concrete fulfillment expectation and powers urgency-based order triage. |
 | Optional Instagram username | The customer's Instagram handle can be attached to the internal order. | Preserves a lightweight link back to the original conversation when needed. |
 | Optional internal note | The operator may save private context that is never shown publicly. | Keeps operational exceptions beside the order instead of buried in DMs. |
@@ -207,6 +209,8 @@ must not be exposed in public analytics, logs, screenshots, or support material.
 | Validated receipt | The server accepts one non-empty JPEG, PNG, or WebP file within the configured size limit and detects its type from its opening bytes rather than its filename. It does not fully decode the image. | Rejects obvious unsupported uploads and filename spoofing while keeping the pilot upload flow small. |
 | One-time customer submission | Submission is allowed only once and only while the order is waiting for information. | Avoids conflicting customer edits after the shop begins payment review and fulfillment. |
 | Manual payment distinction | A submitted receipt moves the order to `waiting_payment`, never directly to `paid`. | Avoids falsely claiming payment success when Radif cannot verify bank transactions. |
+| Explicit final-payment request | After accepting the first payment, the operator can permanently request the remainder. Radif snapshots the card active at request time and prepares a DM containing the amount and existing customer link. | Keeps the second handoff deliberate and compatible with the shop's existing DM workflow. |
+| Final receipt and confirmation | The customer can upload one final receipt from the same link; an assigned operator must explicitly confirm it, recording admin and time. A wrong image remains stored and corrections are handled in DM. | Distinguishes evidence from acceptance while avoiding replacement and dispute-management workflows in the pilot. |
 
 The customer is explicitly told that uploading a receipt does not confirm
 payment. The shop operator remains responsible for checking it. Historical
@@ -233,7 +237,8 @@ such an order cannot use `waiting_payment`.
 | Feature | Current behavior | Product reason |
 | --- | --- | --- |
 | Complete operational record | Shows shop, products, quantities, unit prices, total, delivery date, Instagram username, internal note, full customer details, receipt, tracking code, timestamps, link, and history. | Makes the order page the primary record so the operator does not need to reconstruct it from DMs. |
-| Protected receipt preview | Receipt images are available only to authenticated admins assigned to the order's shop and are not browser-cached. | Keeps payment evidence out of the public link and limits cross-shop exposure. |
+| Protected receipt preview | Initial and final receipt images are available only to authenticated admins assigned to the order's shop and are not browser-cached. | Keeps payment evidence out of the public link and limits cross-shop exposure. |
+| Split-payment controls | The record shows both amounts and receipts, requests the final payment, copies its DM, and records explicit confirmation. Shipping remains possible before confirmation but requires an operator warning. | Keeps payment progress beside fulfillment while preserving an emergency manual override. |
 | Customer-detail correction | After the customer submits, the operator can correct name, mobile, address, postal code, and customer note. | Handles typos and support corrections without asking the customer to resubmit everything. |
 | Internal-context correction | The operator can edit the Instagram username and internal note after creation. | Keeps the link to the original conversation and private operating context accurate. |
 | Delivery-date correction | The operator may replace the estimated delivery date with a current or future date. | Supports fulfillment changes while keeping customer expectations synchronized. |
@@ -251,7 +256,7 @@ receipt after creation or import.
 | --- | --- |
 | `waiting_info` | The order exists, but the customer has not submitted details and a receipt. |
 | `waiting_payment` | Customer details and a receipt exist, and the shop must verify payment manually. |
-| `paid` | The shop has manually accepted the payment. |
+| `paid` | The shop has manually accepted the payment; for a split order this confirms the first payment. |
 | `preparing` | Fulfillment work is in progress. |
 | `shipped` | The order has been dispatched. |
 | `cancelled` | The order is no longer active. |
@@ -264,6 +269,8 @@ Current transition rules:
   receipt for `waiting_payment`, and records its status as the initial history
   entry.
 - Only an operator can decide that an order is `paid`.
+- Final-payment request, receipt, and confirmation are parallel payment state;
+  they do not add or change fulfillment statuses.
 - Operators may move directly between statuses except that submitted orders
   cannot return to `waiting_info`, and receipt-less orders cannot enter
   `waiting_payment`.
@@ -286,7 +293,7 @@ validated ideal workflow.
 | Submission confirmation | The successful form is replaced by a registered-order state. | Reassures the customer that the details and receipt reached the shop. |
 | Current public status | Shows a customer-friendly Persian status and latest update. | Answers the most common progress question without requiring a DM. |
 | Public timeline | After submission, shows status changes in chronological order without admin identity. | Provides transparent progress while keeping internal staff information private. |
-| Receipt state | States whether a receipt was uploaded but never displays it publicly. | Reassures the customer while protecting payment evidence and accurately representing receipt-less historical imports. |
+| Receipt state | States whether each requested receipt was uploaded or confirmed but never displays an image publicly. | Reassures the customer while protecting payment evidence and accurately representing receipt-less historical imports. |
 | Masked customer summary | Shows full name, partially masked mobile, shortened address, and only the last four postal-code digits. | Helps the customer recognize the submitted record while reducing exposure through a forwarded link. |
 | Tracking code | Displays and copies the operator-entered code when present. | Lets the same link answer post-shipment tracking questions. |
 | Shop support action | When configured, the public page can open the shop's Instagram or WhatsApp with the order code in a prepared message. Before submission it offers general help; afterward it offers an information-correction request. | Gives blocked customers a recovery path without making the one-time form editable. |
@@ -315,8 +322,9 @@ accidentally during feature work:
 4. The customer must not need an account, password, app, SMS, or email.
 5. Each customer link represents one order and exposes only public order data.
 6. In the live customer-submission flow, customer details and exactly one valid
-   receipt are committed together. Operator-only historical import may omit the
-   receipt, but a receipt-less order cannot use `waiting_payment`.
+   initial receipt are committed together. A requested split-payment remainder
+   may later receive exactly one final receipt. Operator-only historical import
+   may omit the receipt, but a receipt-less order cannot use `waiting_payment`.
 7. Customer receipt upload means "waiting for payment review," not "paid."
 8. Customer submission is one-time; only an authorized shop operator can make
    later corrections.

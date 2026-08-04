@@ -235,6 +235,15 @@ export default function OrdersPage({ shop }: { shop: Shop }) {
       {!loading && orders.length > 0 && (
         <div className="mt-4 space-y-3">
           {orders.map((order) => {
+            const paymentLabel = !order.initialPaymentAmount
+              ? ""
+              : order.finalPaymentConfirmed
+                ? "تسویه دو مرحله‌ای"
+                : order.finalReceiptUploaded
+                  ? "رسید نهایی آماده بررسی"
+                  : order.finalPaymentRequested
+                    ? "منتظر رسید نهایی"
+                    : "پرداخت دو مرحله‌ای";
             if (compact) {
               return (
                 <NavLink
@@ -244,7 +253,7 @@ export default function OrdersPage({ shop }: { shop: Shop }) {
                 >
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-xs font-bold text-ink/65">{order.orderCode.replace(/\d/g, (digit) => persianDigits[Number(digit)])} · آخرین تغییر {relativeAge(order.updatedAt)}</p>
-                    <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${statusStyles[order.status]?.chip ?? "bg-ledger"}`}>{adminStatusLabels[order.status] ?? order.status}</span>
+                    <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${statusStyles[order.status]?.chip ?? "bg-ledger"}`}>{order.initialPaymentAmount && order.status === "paid" ? "پرداخت اول تأیید شده" : adminStatusLabels[order.status] ?? order.status}</span>
                   </div>
                   <p className="mt-2 truncate font-black">{order.productSummary}</p>
                   <div className="mt-1 flex items-center justify-between gap-3 text-sm">
@@ -253,6 +262,7 @@ export default function OrdersPage({ shop }: { shop: Shop }) {
                     </span>
                     <strong className="shrink-0">{persianNumber(order.amount)} تومان</strong>
                   </div>
+                  {paymentLabel && <p className={`mt-2 text-xs font-black ${order.finalReceiptUploaded && !order.finalPaymentConfirmed ? "text-saffron" : order.finalPaymentConfirmed ? "text-teal" : "text-ink/55"}`}>{paymentLabel}</p>}
                 </NavLink>
               );
             }
@@ -271,7 +281,7 @@ export default function OrdersPage({ shop }: { shop: Shop }) {
                       {order.customerSubmitted ? order.customerFullName : "اطلاعات مشتری ثبت نشده"}
                     </p>
                   </div>
-                  <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${statusStyles[order.status]?.chip ?? "bg-ledger"}`}>{adminStatusLabels[order.status] ?? order.status}</span>
+                  <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${statusStyles[order.status]?.chip ?? "bg-ledger"}`}>{order.initialPaymentAmount && order.status === "paid" ? "پرداخت اول تأیید شده" : adminStatusLabels[order.status] ?? order.status}</span>
                 </div>
                 <div className="mt-4 flex items-end justify-between gap-3 border-t border-ledger pt-3 text-sm">
                   <span>
@@ -288,7 +298,7 @@ export default function OrdersPage({ shop }: { shop: Shop }) {
                   </span>
                   <span className="text-left">
                     <strong>{persianNumber(order.amount)} تومان</strong>
-                    <span className="mt-1 flex justify-end gap-2 text-xs text-ink/65">{order.receiptUploaded && <span>رسید دارد</span>}{order.hasTrackingCode && <span>کد رهگیری دارد</span>}</span>
+                    <span className="mt-1 flex max-w-48 flex-wrap justify-end gap-x-2 gap-y-1 text-xs text-ink/65">{paymentLabel && <span className={order.finalReceiptUploaded && !order.finalPaymentConfirmed ? "font-black text-saffron" : ""}>{paymentLabel}</span>}{order.receiptUploaded && !order.initialPaymentAmount && <span>رسید دارد</span>}{order.hasTrackingCode && <span>کد رهگیری دارد</span>}</span>
                   </span>
                 </div>
               </NavLink>

@@ -51,6 +51,8 @@ export type CreatedOrder = {
   status: string;
   estimatedDeliveryDate: string;
   createdAt: string;
+  initialPaymentAmount?: number;
+  finalPaymentAmount?: number;
 };
 
 export type PublicOrder = {
@@ -58,6 +60,8 @@ export type PublicOrder = {
   shop: { name: string; logoPath?: string };
   items: { name: string; imagePath: string; quantity: number }[];
   amount: number;
+  initialPaymentAmount?: number;
+  finalPaymentAmount?: number;
   status: string;
   estimatedDeliveryDate: string;
   paymentCardNumber: string;
@@ -65,6 +69,11 @@ export type PublicOrder = {
   customerSubmitted: boolean;
   customerSubmissionAllowed: boolean;
   receiptUploaded: boolean;
+  finalPaymentRequested: boolean;
+  finalPaymentCardNumber?: string;
+  finalPaymentInstructions?: string;
+  finalReceiptUploaded: boolean;
+  finalPaymentConfirmed: boolean;
   shipmentTrackingCode?: string;
   updatedAt: string;
   history: { status: string; createdAt: string }[];
@@ -79,6 +88,10 @@ export type OrderSummary = {
   customerFullName?: string;
   customerSubmitted: boolean;
   receiptUploaded: boolean;
+  initialPaymentAmount?: number;
+  finalPaymentRequested: boolean;
+  finalReceiptUploaded: boolean;
+  finalPaymentConfirmed: boolean;
   hasTrackingCode: boolean;
   amount: number;
   status: string;
@@ -93,6 +106,8 @@ export type AdminOrder = {
   shop: { id: number; name: string };
   items: { name: string; imagePath: string; quantity: number; unitPrice: number }[];
   amount: number;
+  initialPaymentAmount?: number;
+  finalPaymentAmount?: number;
   status: string;
   estimatedDeliveryDate: string;
   instagramUsername: string;
@@ -105,6 +120,15 @@ export type AdminOrder = {
   customerSubmitted: boolean;
   receiptUploaded: boolean;
   receiptUrl?: string;
+  finalPaymentRequested: boolean;
+  finalPaymentRequestedAt?: string;
+  finalPaymentCardNumber: string;
+  finalPaymentInstructions: string;
+  finalReceiptUploaded: boolean;
+  finalReceiptUrl?: string;
+  finalPaymentConfirmed: boolean;
+  finalPaymentConfirmedAt?: string;
+  finalPaymentConfirmedByAdminName?: string;
   shipmentTrackingCode: string;
   customerUrl: string;
   createdAt: string;

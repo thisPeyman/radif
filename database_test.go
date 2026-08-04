@@ -92,6 +92,11 @@ func TestMigrateAndSeedIsRepeatable(t *testing.T) {
 			t.Fatalf("orders is missing %s", column)
 		}
 	}
+	for _, column := range []string{"initial_payment_amount", "final_payment_requested_at", "final_receipt_file_path", "final_payment_confirmed_at"} {
+		if !db.Migrator().HasColumn(&Order{}, column) {
+			t.Fatalf("orders is missing %s", column)
+		}
+	}
 
 	if err := db.Create(&Session{TokenHash: "invalid-admin", AdminID: 999999, ExpiresAt: time.Now().Add(time.Hour)}).Error; err == nil {
 		t.Fatal("sessions admin foreign key was not enforced")

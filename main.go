@@ -151,11 +151,15 @@ func newServer(db *gorm.DB, cfg config) *echo.Echo {
 	e.GET("/api/orders/:orderID", getOrder(db, cfg), requireAdmin(db, cfg))
 	e.PATCH("/api/orders/:orderID", updateOrder(db, cfg), requireAdmin(db, cfg), origin)
 	e.GET("/api/orders/:orderID/receipt", getOrderReceipt(db, cfg), requireAdmin(db, cfg))
+	e.POST("/api/orders/:orderID/final-payment/request", requestFinalPayment(db, cfg), requireAdmin(db, cfg), origin)
+	e.POST("/api/orders/:orderID/final-payment/confirm", confirmFinalPayment(db, cfg), requireAdmin(db, cfg), origin)
+	e.GET("/api/orders/:orderID/final-payment/receipt", getFinalPaymentReceipt(db, cfg), requireAdmin(db, cfg))
 	e.POST("/api/orders/:orderID/link-copied", recordLinkCopied(db), requireAdmin(db, cfg), origin)
 	e.POST("/api/orders/:orderID/customer-link/rotate", rotateCustomerLink(db, cfg), requireAdmin(db, cfg), origin)
 	e.GET("/api/o/:token", publicOrder(db))
 	e.POST("/api/o/:token/support-click", recordPublicSupportClick(db), origin)
 	e.POST("/api/o/:token/details", submitCustomerDetails(db, cfg), origin)
+	e.POST("/api/o/:token/final-payment/receipt", submitFinalReceipt(db, cfg), origin)
 
 	e.Use(middleware.StaticWithConfig(middleware.StaticConfig{
 		Skipper: func(c echo.Context) bool {

@@ -52,6 +52,7 @@ func createOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 				Quantity  int  `json:"quantity"`
 			} `json:"items"`
 			Amount                int64  `json:"amount"`
+			InitialPaymentAmount  *int64 `json:"initialPaymentAmount"`
 			EstimatedDeliveryDate string `json:"estimatedDeliveryDate"`
 			InstagramUsername     string `json:"instagramUsername"`
 			InternalNote          string `json:"internalNote"`
@@ -72,6 +73,9 @@ func createOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 		input.InternalNote = strings.TrimSpace(input.InternalNote)
 		if input.CreateKey == "" || len(input.CreateKey) > 100 || input.ShopID == 0 || len(input.Items) == 0 || len(input.Items) > 50 || input.Amount <= 0 {
 			return echo.NewHTTPError(http.StatusBadRequest, "محصول و مبلغ سفارش الزامی است.")
+		}
+		if input.InitialPaymentAmount != nil && (*input.InitialPaymentAmount <= 0 || *input.InitialPaymentAmount >= input.Amount) {
+			return echo.NewHTTPError(http.StatusBadRequest, "مبلغ پرداخت اول باید بیشتر از صفر و کمتر از مبلغ سفارش باشد.")
 		}
 		if !validDeliveryDate(input.EstimatedDeliveryDate) {
 			return echo.NewHTTPError(http.StatusBadRequest, "تاریخ تحویل باید امروز یا بعد از آن باشد.")
@@ -95,11 +99,15 @@ func createOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 		if input.ElapsedMS > int64((10 * time.Minute).Milliseconds()) {
 			input.ElapsedMS = int64((10 * time.Minute).Milliseconds())
 		}
-		fingerprintJSON, _ := json.Marshal(map[string]any{
+		fingerprintInput := map[string]any{
 			"shopId": input.ShopID, "items": input.Items, "amount": input.Amount,
 			"estimatedDeliveryDate": input.EstimatedDeliveryDate,
 			"instagramUsername":     input.InstagramUsername, "internalNote": input.InternalNote,
-		})
+		}
+		if input.InitialPaymentAmount != nil {
+			fingerprintInput["initialPaymentAmount"] = *input.InitialPaymentAmount
+		}
+		fingerprintJSON, _ := json.Marshal(fingerprintInput)
 		createFingerprint := hashToken(string(fingerprintJSON))
 
 		admin := c.Get(adminContextKey).(*Admin)
@@ -128,6 +136,7 @@ func createOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 			SecretToken:           token,
 			ShopID:                input.ShopID,
 			Amount:                input.Amount,
+			InitialPaymentAmount:  input.InitialPaymentAmount,
 			EstimatedDeliveryDate: input.EstimatedDeliveryDate,
 			InstagramUsername:     input.InstagramUsername,
 			InternalNote:          input.InternalNote,
@@ -192,14 +201,19 @@ func createOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 }
 
 func orderCreatedResponse(c echo.Context, cfg config, order Order) error {
-	return c.JSON(http.StatusCreated, map[string]any{
+	response := map[string]any{
 		"id":                    order.ID,
 		"orderCode":             fmt.Sprintf("#%d", order.ID),
 		"customerUrl":           cfg.appOrigin + "/o/" + order.SecretToken,
 		"status":                order.Status,
 		"estimatedDeliveryDate": order.EstimatedDeliveryDate,
 		"createdAt":             order.CreatedAt,
-	})
+	}
+	if order.InitialPaymentAmount != nil {
+		response["initialPaymentAmount"] = *order.InitialPaymentAmount
+		response["finalPaymentAmount"] = order.Amount - *order.InitialPaymentAmount
+	}
+	return c.JSON(http.StatusCreated, response)
 }
 
 func validDeliveryDate(value string) bool {
@@ -500,6 +514,10 @@ func listOrders(db *gorm.DB) echo.HandlerFunc {
 			CustomerFullName      string    `json:"customerFullName,omitempty"`
 			CustomerSubmitted     bool      `json:"customerSubmitted"`
 			ReceiptUploaded       bool      `json:"receiptUploaded"`
+			InitialPaymentAmount  *int64    `json:"initialPaymentAmount,omitempty"`
+			FinalPaymentRequested bool      `json:"finalPaymentRequested"`
+			FinalReceiptUploaded  bool      `json:"finalReceiptUploaded"`
+			FinalPaymentConfirmed bool      `json:"finalPaymentConfirmed"`
 			HasTrackingCode       bool      `json:"hasTrackingCode"`
 			Amount                int64     `json:"amount"`
 			Status                string    `json:"status"`
@@ -519,8 +537,10 @@ func listOrders(db *gorm.DB) echo.HandlerFunc {
 			response[i] = orderSummary{
 				ID: order.ID, OrderCode: fmt.Sprintf("#%d", order.ID), ProductSummary: productSummary,
 				CustomerFullName: order.CustomerFullName, CustomerSubmitted: order.CustomerSubmittedAt != nil,
-				ReceiptUploaded: order.ReceiptFilePath != "", HasTrackingCode: order.ShipmentTrackingCode != "",
-				Amount: order.Amount, Status: order.Status, EstimatedDeliveryDate: order.EstimatedDeliveryDate, CreatedAt: order.CreatedAt, UpdatedAt: order.UpdatedAt,
+				ReceiptUploaded: order.ReceiptFilePath != "", InitialPaymentAmount: order.InitialPaymentAmount,
+				FinalPaymentRequested: order.FinalPaymentRequestedAt != nil, FinalReceiptUploaded: order.FinalReceiptFilePath != "", FinalPaymentConfirmed: order.FinalPaymentConfirmedAt != nil,
+				HasTrackingCode: order.ShipmentTrackingCode != "",
+				Amount:          order.Amount, Status: order.Status, EstimatedDeliveryDate: order.EstimatedDeliveryDate, CreatedAt: order.CreatedAt, UpdatedAt: order.UpdatedAt,
 			}
 		}
 		return c.JSON(http.StatusOK, map[string]any{"orders": response, "hasMore": hasMore, "activeCount": activeCount, "archivedCount": archivedCount})
@@ -545,6 +565,7 @@ func getOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 func findAdminOrder(db *gorm.DB, adminID, orderID uint) (Order, error) {
 	var order Order
 	err := db.Preload("Shop").Preload("Items.Product").Preload("History", func(query *gorm.DB) *gorm.DB { return query.Order("created_at, id") }).Preload("History.ChangedByAdmin").
+		Preload("FinalPaymentConfirmedByAdmin").
 		Joins("JOIN shops ON shops.id = orders.shop_id").Joins("JOIN admin_shops ON admin_shops.shop_id = shops.id AND admin_shops.admin_id = ?", adminID).Where("orders.id = ?", orderID).First(&order).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return Order{}, echo.NewHTTPError(http.StatusNotFound, "سفارش پیدا نشد.")
@@ -588,10 +609,27 @@ func adminOrderResponse(c echo.Context, cfg config, order Order) error {
 		"receiptUploaded":      order.ReceiptFilePath != "",
 		"shipmentTrackingCode": order.ShipmentTrackingCode, "history": history,
 		"createdAt": order.CreatedAt, "updatedAt": order.UpdatedAt, "customerSubmittedAt": order.CustomerSubmittedAt,
-		"customerUrl": cfg.appOrigin + "/o/" + order.SecretToken,
+		"customerUrl":              cfg.appOrigin + "/o/" + order.SecretToken,
+		"finalPaymentRequested":    order.FinalPaymentRequestedAt != nil,
+		"finalPaymentRequestedAt":  order.FinalPaymentRequestedAt,
+		"finalPaymentCardNumber":   order.FinalPaymentCardNumber,
+		"finalPaymentInstructions": order.FinalPaymentInstructions,
+		"finalReceiptUploaded":     order.FinalReceiptFilePath != "",
+		"finalPaymentConfirmed":    order.FinalPaymentConfirmedAt != nil,
+		"finalPaymentConfirmedAt":  order.FinalPaymentConfirmedAt,
+	}
+	if order.InitialPaymentAmount != nil {
+		response["initialPaymentAmount"] = *order.InitialPaymentAmount
+		response["finalPaymentAmount"] = order.Amount - *order.InitialPaymentAmount
+	}
+	if order.FinalPaymentConfirmedByAdmin != nil {
+		response["finalPaymentConfirmedByAdminName"] = order.FinalPaymentConfirmedByAdmin.Name
 	}
 	if order.ReceiptFilePath != "" {
 		response["receiptUrl"] = fmt.Sprintf("/api/orders/%d/receipt", order.ID)
+	}
+	if order.FinalReceiptFilePath != "" {
+		response["finalReceiptUrl"] = fmt.Sprintf("/api/orders/%d/final-payment/receipt", order.ID)
 	}
 	return c.JSON(http.StatusOK, response)
 }
@@ -611,39 +649,43 @@ func getOrderReceipt(db *gorm.DB, cfg config) echo.HandlerFunc {
 		if err != nil {
 			return err
 		}
-		if order.ReceiptFilePath == "" || filepath.Base(order.ReceiptFilePath) != order.ReceiptFilePath {
-			return echo.NewHTTPError(http.StatusNotFound, "رسید پیدا نشد.")
-		}
-		file, err := os.Open(filepath.Join(cfg.receiptDir, order.ReceiptFilePath))
-		if os.IsNotExist(err) {
-			return echo.NewHTTPError(http.StatusNotFound, "رسید پیدا نشد.")
-		}
-		if err != nil {
-			return err
-		}
-		defer file.Close()
-		info, err := file.Stat()
-		if err != nil {
-			return err
-		}
-		header := make([]byte, 512)
-		read, err := file.Read(header)
-		if err != nil && !errors.Is(err, io.EOF) {
-			return err
-		}
-		if _, err := file.Seek(0, io.SeekStart); err != nil {
-			return err
-		}
-		contentType := http.DetectContentType(header[:read])
-		if contentType != "image/jpeg" && contentType != "image/png" && contentType != "image/webp" {
-			return echo.NewHTTPError(http.StatusNotFound, "رسید پیدا نشد.")
-		}
-		c.Response().Header().Set(echo.HeaderContentType, contentType)
-		c.Response().Header().Set(echo.HeaderContentDisposition, "inline")
-		c.Response().Header().Set(echo.HeaderCacheControl, "no-store")
-		http.ServeContent(c.Response(), c.Request(), order.ReceiptFilePath, info.ModTime(), file)
-		return nil
+		return serveReceipt(c, cfg, order.ReceiptFilePath)
 	}
+}
+
+func serveReceipt(c echo.Context, cfg config, receiptPath string) error {
+	if receiptPath == "" || filepath.Base(receiptPath) != receiptPath {
+		return echo.NewHTTPError(http.StatusNotFound, "رسید پیدا نشد.")
+	}
+	file, err := os.Open(filepath.Join(cfg.receiptDir, receiptPath))
+	if os.IsNotExist(err) {
+		return echo.NewHTTPError(http.StatusNotFound, "رسید پیدا نشد.")
+	}
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	header := make([]byte, 512)
+	read, err := file.Read(header)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return err
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
+	contentType := http.DetectContentType(header[:read])
+	if contentType != "image/jpeg" && contentType != "image/png" && contentType != "image/webp" {
+		return echo.NewHTTPError(http.StatusNotFound, "رسید پیدا نشد.")
+	}
+	c.Response().Header().Set(echo.HeaderContentType, contentType)
+	c.Response().Header().Set(echo.HeaderContentDisposition, "inline")
+	c.Response().Header().Set(echo.HeaderCacheControl, "no-store")
+	http.ServeContent(c.Response(), c.Request(), receiptPath, info.ModTime(), file)
+	return nil
 }
 
 func rotateCustomerLink(db *gorm.DB, cfg config) echo.HandlerFunc {
@@ -742,6 +784,17 @@ func publicOrderResponse(c echo.Context, status int, order Order) error {
 		"shipmentTrackingCode":      order.ShipmentTrackingCode,
 		"updatedAt":                 order.UpdatedAt,
 		"history":                   history,
+		"finalPaymentRequested":     order.FinalPaymentRequestedAt != nil,
+		"finalReceiptUploaded":      order.FinalReceiptFilePath != "",
+		"finalPaymentConfirmed":     order.FinalPaymentConfirmedAt != nil,
+	}
+	if order.InitialPaymentAmount != nil {
+		response["initialPaymentAmount"] = *order.InitialPaymentAmount
+		response["finalPaymentAmount"] = order.Amount - *order.InitialPaymentAmount
+	}
+	if order.FinalPaymentRequestedAt != nil {
+		response["finalPaymentCardNumber"] = order.FinalPaymentCardNumber
+		response["finalPaymentInstructions"] = order.FinalPaymentInstructions
 	}
 	if support := publicSupport(order); support != nil {
 		response["support"] = support

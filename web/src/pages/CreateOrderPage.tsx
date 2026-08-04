@@ -14,6 +14,10 @@ function newCreateKey(shopID: number) {
   return key;
 }
 
+function halfAmount(amount: number) {
+  return amount > 1 ? String(Math.ceil(amount / 2)) : "";
+}
+
 export default function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; onBusyChange: (busy: boolean) => void }) {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -21,12 +25,16 @@ export default function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; on
   const [items, setItems] = useState<SelectedOrderItem[]>([]);
   const [amount, setAmount] = useState("");
   const [amountFocused, setAmountFocused] = useState(false);
+  const [splitPayment, setSplitPayment] = useState(false);
+  const [initialPaymentAmount, setInitialPaymentAmount] = useState("");
+  const [initialPaymentFocused, setInitialPaymentFocused] = useState(false);
   const [deliveryDate, setDeliveryDate] = useState("");
   const [instagram, setInstagram] = useState("");
   const [note, setNote] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [amountError, setAmountError] = useState("");
+  const [initialPaymentError, setInitialPaymentError] = useState("");
   const [deliveryDateError, setDeliveryDateError] = useState("");
   const [created, setCreated] = useState<CreatedOrder | null>(null);
   const [editingDeliveryDate, setEditingDeliveryDate] = useState(false);
@@ -58,9 +66,12 @@ export default function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; on
   useEffect(loadProducts, [shop.id]);
 
   function updateItems(next: SelectedOrderItem[]) {
+    const total = next.reduce((sum, item) => sum + item.product.defaultPrice * item.quantity, 0);
     setItems(next);
-    setAmount(String(next.reduce((total, item) => total + item.product.defaultPrice * item.quantity, 0)));
+    setAmount(String(total));
+    if (splitPayment) setInitialPaymentAmount(halfAmount(total));
     setAmountError("");
+    setInitialPaymentError("");
     setError("");
   }
 
@@ -107,11 +118,17 @@ export default function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; on
       setAmountError("مبلغ سفارش را به‌صورت یک عدد بزرگ‌تر از صفر وارد کنید.");
       return;
     }
+    const numericInitialPayment = Number(initialPaymentAmount);
+    if (splitPayment && (!Number.isSafeInteger(numericInitialPayment) || numericInitialPayment <= 0 || numericInitialPayment >= numericAmount)) {
+      setInitialPaymentError("مبلغ پرداخت اول باید بیشتر از صفر و کمتر از مبلغ سفارش باشد.");
+      return;
+    }
     if (!deliveryDate || deliveryDate < todayISO()) {
       setDeliveryDateError("تاریخ تحویل را برای امروز یا یکی از روزهای بعد انتخاب کنید.");
       return;
     }
     setAmountError("");
+    setInitialPaymentError("");
     setDeliveryDateError("");
     setPending(true);
     onBusyChange(true);
@@ -135,6 +152,7 @@ export default function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; on
           shopId: shop.id,
           items: items.map((item) => ({ productId: item.product.id, quantity: item.quantity })),
           amount: numericAmount,
+          ...(splitPayment ? { initialPaymentAmount: numericInitialPayment } : {}),
           estimatedDeliveryDate: deliveryDate,
           instagramUsername: instagram,
           internalNote: note,
@@ -181,12 +199,15 @@ export default function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; on
   function reset() {
     setItems([]);
     setAmount("");
+    setSplitPayment(false);
+    setInitialPaymentAmount("");
     setDeliveryDate("");
     setInstagram("");
     setNote("");
     setCreated(null);
     setError("");
     setAmountError("");
+    setInitialPaymentError("");
     setDeliveryDateError("");
     setEditingDeliveryDate(false);
     setDeliveryUpdateError("");
@@ -298,7 +319,11 @@ export default function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; on
                 value={amountFocused ? amount.replace(/\d/g, (digit) => persianDigits[Number(digit)]) : persianNumber(amount)}
                 onFocus={() => setAmountFocused(true)}
                 onBlur={() => setAmountFocused(false)}
-                onChange={(event) => setAmount(normalizeDigits(event.target.value))}
+                onChange={(event) => {
+                  const value = normalizeDigits(event.target.value);
+                  setAmount(value);
+                  if (splitPayment) setInitialPaymentAmount(halfAmount(Number(value)));
+                }}
                 aria-describedby={amountError ? "amount-unit amount-error" : "amount-unit"}
                 aria-invalid={Boolean(amountError)}
                 required
@@ -307,6 +332,58 @@ export default function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; on
             </span>
             {amountError && <span id="amount-error" className="mt-2 block text-sm font-bold text-error" role="alert">{amountError}</span>}
           </label>
+          <div className="mt-5 rounded-3xl border border-teal/20 bg-white p-4 shadow-sm">
+            <label className="flex min-h-12 cursor-pointer items-center justify-between gap-4" htmlFor="split-payment">
+              <span>
+                <span className="block text-sm font-black">پرداخت در دو مرحله</span>
+                <span className="mt-1 block text-xs leading-6 text-ink/65">بخشی اکنون و باقی‌مانده پس از آماده‌شدن سفارش</span>
+              </span>
+              <input
+                id="split-payment"
+                className="size-5 accent-teal"
+                type="checkbox"
+                checked={splitPayment}
+                onChange={(event) => {
+                  const checked = event.target.checked;
+                  setSplitPayment(checked);
+                  setInitialPaymentError("");
+                  if (checked) setInitialPaymentAmount(halfAmount(Number(amount)));
+                }}
+              />
+            </label>
+            {splitPayment && (
+              <div className="mt-4 border-t border-dashed border-teal/25 pt-4">
+                <label className="block" htmlFor="initial-payment-amount">
+                  <span className="mb-2 block text-sm font-bold">مبلغ پرداخت اول</span>
+                  <span className="relative block">
+                    <input
+                      id="initial-payment-amount"
+                      className="field pl-20 font-black"
+                      inputMode="numeric"
+                      value={initialPaymentFocused ? initialPaymentAmount.replace(/\d/g, (digit) => persianDigits[Number(digit)]) : persianNumber(initialPaymentAmount)}
+                      onFocus={() => setInitialPaymentFocused(true)}
+                      onBlur={() => setInitialPaymentFocused(false)}
+                      onChange={(event) => { setInitialPaymentAmount(normalizeDigits(event.target.value)); setInitialPaymentError(""); }}
+                      aria-invalid={Boolean(initialPaymentError)}
+                      required
+                    />
+                    <span className="pointer-events-none absolute inset-y-0 left-4 flex items-center text-sm font-bold text-ink/70">تومان</span>
+                  </span>
+                </label>
+                {initialPaymentError && <p className="mt-2 text-sm font-bold text-error" role="alert">{initialPaymentError}</p>}
+                <div className="mt-4 grid grid-cols-2 overflow-hidden rounded-2xl border border-teal/15 bg-teal/6">
+                  <div className="p-3">
+                    <p className="text-xs font-bold text-ink/55">اکنون</p>
+                    <p className="mt-1 font-black text-teal">{persianNumber(initialPaymentAmount)} تومان</p>
+                  </div>
+                  <div className="border-r border-dashed border-teal/25 p-3">
+                    <p className="text-xs font-bold text-ink/55">پس از آماده‌سازی</p>
+                    <p className="mt-1 font-black">{Number(amount) > Number(initialPaymentAmount) ? persianNumber(Number(amount) - Number(initialPaymentAmount)) : "—"} تومان</p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
           <div className="mt-5">
             <span className="mb-2 block text-sm font-black">تاریخ تحویل</span>
             <DeliveryDateSelect
