@@ -2,7 +2,7 @@
 
 > Current product truth for product planning and AI conversations.
 >
-> Last reviewed against the implemented application: 2026-08-01.
+> Last reviewed against the implemented application: 2026-08-04.
 >
 > The older `instagram_order_mvp_product_document_en.md` and `MVP_PLAN.md`
 > explain the original intent, but they also contain planned or outdated
@@ -62,9 +62,9 @@ DMs and needs to:
 - Correct customer information and manage fulfillment.
 - Reduce repeated customer status questions.
 
-The key adoption constraint is speed: creating an order and copying its link
-should take less than 30 seconds for a repeat workflow. If Radif creates more
-work than it removes, operators will return to DMs and notes.
+The key adoption constraint is speed: creating an order and handing its message
+back to the customer should take less than 30 seconds for a repeat workflow. If
+Radif creates more work than it removes, operators will return to DMs and notes.
 
 ### Customer
 
@@ -89,13 +89,18 @@ pilot role, not a self-service product experience.
 Sale is agreed in Instagram DMs
 -> shop operator selects products and creates an order
 -> Radif creates an order code and secret customer link
--> operator copies the link back into the DM
+-> Radif copies a prepared message and the operator sends or shares it in the DM
 -> customer sees the order and card-transfer instructions
 -> customer submits delivery details and one receipt together
 -> order waits for manual payment confirmation
 -> operator reviews the receipt and manages fulfillment
 -> customer revisits the same link for status and tracking
 ```
+
+For orders already being managed elsewhere, the operator can instead import the
+products, customer details, current status, and optional receipt directly. The
+customer link then starts as a status destination rather than an information
+form.
 
 ## 5. Current Feature Inventory
 
@@ -121,7 +126,9 @@ Everything in this section is implemented today.
 | Multiple shops per admin | An operator can switch between assigned active shops, and the selection is remembered in the browser. | Supports people managing more than one Instagram page while keeping each order under the correct shop. |
 | Shared shop access | More than one admin can technically be assigned to the same shop. | Allows basic collaboration even though role and team-management screens do not exist yet. |
 | Persistent shop identity | The active shop remains visible in the application header and is repeated during order creation. | Reduces wrong-shop order creation, especially for multi-page operators. |
-| Account summary and logout | Shows the operator's name, login, accessible-shop count, and a logout action. | Provides identity confirmation and safe session termination without a settings area. |
+| Account summary and logout | Shows the operator's name, login, accessible-shop count, and a logout action. | Provides identity confirmation and safe session termination alongside the limited shop settings. |
+| Shop communication settings | An assigned operator can configure the shop's Instagram and WhatsApp contacts, choose which one appears on public orders, and customize the order-sharing message. | Makes the customer handoff and support path adjustable without requiring technical provisioning for routine text and contact changes. |
+| Payment-card settings | An assigned operator can add multiple 16-digit cards, edit their payment instructions, and choose the active card for future orders. Card numbers cannot currently be edited or deleted. | Supports changing payment destinations without changing old orders or requiring direct database work. |
 
 ### 5.3 Product Catalog For Order Entry
 
@@ -148,8 +155,9 @@ not browse it and cannot build carts themselves.
 | Optional Instagram username | The customer's Instagram handle can be attached to the internal order. | Preserves a lightweight link back to the original conversation when needed. |
 | Optional internal note | The operator may save private context that is never shown publicly. | Keeps operational exceptions beside the order instead of buried in DMs. |
 | Order code | Every created order receives a short visible code based on its record ID. | Gives operators and customers an easy reference that is safer to discuss than a long secret URL. |
-| One primary create-and-copy action | Creating the order immediately attempts to copy the customer link. | Optimizes the core handoff back to the Instagram conversation. |
-| Clipboard fallback | If automatic copying fails, the success screen keeps the link visible, selectable, and copyable again. | Supports restrictive mobile and in-app browsers without losing the newly created order. |
+| One primary create-and-copy action | Creating the order immediately attempts to copy a ready-to-send Persian message containing the customer link. | Optimizes the core handoff back to the Instagram conversation instead of leaving the operator to compose the message. |
+| Custom sharing message | Each shop may customize the message using placeholders for shop name, order code, customer URL, amount, and delivery date. | Preserves the shop's preferred customer tone without building message automation. |
+| Native sharing and clipboard fallback | Compatible phones offer the native share sheet after creation. The success screen also keeps the bare link visible, selectable, and copyable. | Supports both direct handoff and restrictive mobile or in-app browsers without losing the newly created order. |
 | Creation retry protection | A browser-held creation key makes identical retries return the same order and rejects reuse with changed data. | Prevents duplicate orders when the network or clipboard flow leaves the operator unsure whether creation succeeded. |
 | Pending-navigation protection | Shop switching, bottom navigation, and accidental page exit are blocked or warned about while creation is submitting. | Reduces duplicate or misplaced orders during the most important write operation. |
 | Post-create actions | The operator can correct the delivery date, open the order, return to the list, or start another order. | Supports the immediate follow-up tasks without making the creation form longer. |
@@ -157,7 +165,21 @@ not browse it and cannot build carts themselves.
 New orders start in `waiting_info`, meaning Radif is waiting for the customer to
 provide delivery details and a receipt.
 
-### 5.5 Secret Customer Order Link
+### 5.5 Historical Order Import
+
+| Feature | Current behavior | Product reason |
+| --- | --- | --- |
+| Operator-only import | An operator can register an existing order from the active catalog with its actual positive amount, required customer details, and delivery date, including a past date. | Brings orders already tracked in DMs or notebooks into the operational queue without asking the customer to repeat an old workflow. |
+| Current-status entry | An imported order must start in `waiting_payment`, `paid`, `preparing`, `shipped`, or `cancelled`; `waiting_info` is not allowed. | Treats the customer information as already collected and avoids opening the public submission form. |
+| Optional historical evidence | Postal code, Instagram username, internal note, and one receipt are optional. The selected products, amount, and receipt cannot be corrected after import. | Accepts incomplete historical records while making the irreversible fields explicit in a review step. |
+| Retry-safe review and creation | The operator reviews the record before submission, and a browser-held creation key gives imports the same duplicate protection as normal creation. The selected status is recorded as the first history entry. | Prevents transcription mistakes and duplicate imports while preserving a useful starting point for later status history. |
+| Import-time history | The original creation and status-change times cannot be entered. Order age, latest update, and initial history use the time of import. | Keeps the import form small, while making clear that Radif is not reconstructing a historically accurate timeline. |
+
+Imported orders still receive an order code and secret customer link, and they
+snapshot the active payment card and instructions. Because customer details are
+already marked as submitted, the public link is immediately a status page.
+
+### 5.6 Secret Customer Order Link
 
 | Feature | Current behavior | Product reason |
 | --- | --- | --- |
@@ -169,59 +191,65 @@ provide delivery details and a receipt.
 The token is a bearer secret. It should be treated like access to that order and
 must not be exposed in public analytics, logs, screenshots, or support material.
 
-### 5.6 Payment Instructions And Customer Submission
+### 5.7 Payment Instructions And Customer Submission
 
 | Feature | Current behavior | Product reason |
 | --- | --- | --- |
-| Shop payment details | The public order shows the shop's card number and supporting payment instructions. The card number can be copied. | Fits the card-to-card payment habit used by the initial market without integrating a payment gateway. |
+| Order payment details | Each order snapshots the shop's active card number and payment instructions at creation or import. The public order displays that snapshot and lets the customer copy the card number. | Fits the card-to-card payment habit used by the initial market while preventing later shop-setting changes from altering an existing payment request. |
+| Banking-app amount | The public order shows the total in toman and can copy ten times that value as a rial number. | Reduces currency-conversion mistakes when the customer enters the amount in an Iranian banking application. |
 | One-page Persian form | Collects required full name, Iranian mobile, full address, and one receipt; postal code and customer note are optional. | Keeps the task short enough for Instagram's mobile browser and asks only for fulfillment data. |
 | Iranian number normalization | Persian, Arabic, and Latin digits are accepted; common `+98`, `0098`, and `98` mobile formats become `09xxxxxxxxx`. | Lets customers enter familiar formats while storing consistent data for operations. |
 | Local text draft recovery | Customer text fields are stored under that order token and restored after refresh or recoverable failure. | Protects customers from retyping long addresses on unreliable mobile connections. |
 | Receipt preview | A selected image can be previewed, replaced, or removed before submission. | Helps the customer catch the wrong screenshot before the one-time submission. |
+| Client-side receipt optimization | Before preview and upload, the browser attempts to limit the image's longest side to 2,000 pixels and convert it to WebP; if this fails, it retains the original accepted file. | Avoids unnecessarily large camera-image uploads without making browser-side conversion a submission requirement. |
 | Atomic submission | Customer details and exactly one receipt are accepted together or not at all. | Prevents incomplete operational records where an address exists without payment evidence or vice versa. |
 | Validated receipt | The server accepts one non-empty JPEG, PNG, or WebP file within the configured size limit and detects its type from its opening bytes rather than its filename. It does not fully decode the image. | Rejects obvious unsupported uploads and filename spoofing while keeping the pilot upload flow small. |
 | One-time customer submission | Submission is allowed only once and only while the order is waiting for information. | Avoids conflicting customer edits after the shop begins payment review and fulfillment. |
 | Manual payment distinction | A submitted receipt moves the order to `waiting_payment`, never directly to `paid`. | Avoids falsely claiming payment success when Radif cannot verify bank transactions. |
 
 The customer is explicitly told that uploading a receipt does not confirm
-payment. The shop operator remains responsible for checking it.
+payment. The shop operator remains responsible for checking it. Historical
+import is the exception to the receipt requirement: it can mark customer details
+as submitted without attaching a receipt.
 
-### 5.7 Order Dashboard And Triage
+### 5.8 Order Dashboard And Triage
 
 | Feature | Current behavior | Product reason |
 | --- | --- | --- |
-| Shop order list | Shows up to 100 orders for the active shop as compact mobile cards. | Replaces DM search with one understandable operational queue while keeping the pilot interface simple. |
-| At-a-glance order data | Cards show code, product summary, customer or missing-information state, amount, status, age, delivery date, receipt state, and tracking state. | Lets the operator decide what needs attention without opening every order. |
-| Unified search | Searches customer name, normalized mobile, numeric order code, or Instagram username. | Matches the fragments an operator is likely to remember from a DM or support request. |
-| Status filters | Filters by waiting for information, waiting for payment, paid, preparing, shipped, or cancelled. | Answers the main operational question: where is each order in fulfillment? |
-| Due-soon filter | Shows active orders due within seven days, including overdue orders. | Surfaces fulfillment risk before a promised date is missed. |
-| Sorting | Supports nearest delivery, newest, or highest amount; nearest active delivery is the default. | Prioritizes operational urgency while still supporting recent-order lookup and value-based review. |
+| Active and archive views | The default queue contains `waiting_info` through `preparing`; `shipped` and `cancelled` orders live in a separate archive. | Keeps finished work out of the daily queue without making it difficult to retrieve. |
+| Active-order count | The active tab shows the total number of in-progress orders regardless of how many pages are loaded. | Gives the operator an immediate sense of remaining work. |
+| Progressive order list | Results load 20 at a time with an action to show more matching orders. | Supports growing order histories without loading the entire shop queue at once. |
+| At-a-glance order data | Detailed active cards show code, product summary, customer or missing-information state, amount, status, age, delivery timing, receipt state, and tracking state. Archive and search results use a more compact summary. | Lets the operator triage active work while keeping broader lookup results scannable. |
+| Unified search | Searches customer name, normalized mobile, numeric order code, or Instagram username across active and archived orders. | Matches the fragments an operator is likely to remember from a DM or support request. |
+| Status filters | The active and archive views offer their relevant statuses; searching exposes all six status filters. | Answers the main operational question without mixing completed work into the default queue. |
+| Delivery urgency | Active cards label overdue and near-term delivery dates. There is no separate due-soon filter. | Surfaces fulfillment risk directly in the queue without another filtering mode. |
+| Sorting | Active orders default to nearest delivery; archive and search default to latest update. Newest order and highest amount are also available where relevant. | Prioritizes operational urgency in active work and recent activity during lookup. |
 | URL-preserved view | Search, filters, and sort are represented in the URL and retained when returning from an order. | Lets operators inspect an order without losing their working queue. |
 | Clear empty and error states | Distinguishes no orders from no matching results and supports retrying failed loads. | Keeps the operator oriented and provides a direct recovery path. |
 
-### 5.8 Admin Order Record And Fulfillment
+### 5.9 Admin Order Record And Fulfillment
 
 | Feature | Current behavior | Product reason |
 | --- | --- | --- |
 | Complete operational record | Shows shop, products, quantities, unit prices, total, delivery date, Instagram username, internal note, full customer details, receipt, tracking code, timestamps, link, and history. | Makes the order page the primary record so the operator does not need to reconstruct it from DMs. |
 | Protected receipt preview | Receipt images are available only to authenticated admins assigned to the order's shop and are not browser-cached. | Keeps payment evidence out of the public link and limits cross-shop exposure. |
 | Customer-detail correction | After the customer submits, the operator can correct name, mobile, address, postal code, and customer note. | Handles typos and support corrections without asking the customer to resubmit everything. |
+| Internal-context correction | The operator can edit the Instagram username and internal note after creation. | Keeps the link to the original conversation and private operating context accurate. |
 | Delivery-date correction | The operator may replace the estimated delivery date with a current or future date. | Supports fulfillment changes while keeping customer expectations synchronized. |
 | Manual status update | The operator can select and save any of the six statuses. | Keeps the pilot workflow fast and flexible without building a customizable workflow engine. |
 | Status history | Every real status change records its previous state, new state, time, and admin when applicable. | Provides basic accountability and explains how the order reached its current state. |
 | Manual tracking code | The operator can add, clear, view, and copy a shipment tracking code. | Delivers the most useful post-shipment information without a courier integration. |
 | Copy actions | Mobile, address, customer link, and tracking code can be copied from the record. | Supports handoff to calling, mapping, Instagram, and shipping workflows outside Radif. |
 
-The operator cannot currently edit products, quantities, total amount, shop,
-Instagram username, or internal note after creation, and cannot replace the
-receipt.
+The operator cannot currently edit products, quantities, total amount, shop, or
+receipt after creation or import.
 
-### 5.9 Statuses, History, And Expiry
+### 5.10 Statuses, History, And Expiry
 
 | Status | Product meaning |
 | --- | --- |
 | `waiting_info` | The order exists, but the customer has not submitted details and a receipt. |
-| `waiting_payment` | Details and receipt exist; the shop must verify payment manually. |
+| `waiting_payment` | Customer details exist and the shop must verify payment manually. A normally submitted order has a receipt; a historical import may not. |
 | `paid` | The shop has manually accepted the payment. |
 | `preparing` | Fulfillment work is in progress. |
 | `shipped` | The order has been dispatched. |
@@ -231,11 +259,13 @@ Current transition rules:
 
 - A new order starts at `waiting_info`.
 - Customer submission changes `waiting_info` to `waiting_payment`.
+- Historical import starts in any status except `waiting_info` and records that
+  status as its initial history entry.
 - Only an operator can decide that an order is `paid`.
 - Operators may currently move directly between any statuses, including moving
   backward or restoring a cancelled order.
 - Re-saving the same status does not create duplicate history.
-- Orders created at least seven days ago and currently in `waiting_info` are
+- Orders created at least 48 hours ago and currently in `waiting_info` are
   cancelled automatically at startup or during an hourly cleanup. An old order
   moved back to `waiting_info` can therefore be cancelled by the next cleanup.
 - Automatic cancellation creates a history entry and does not affect orders in
@@ -246,24 +276,26 @@ Automatic cancellation keeps abandoned forms out of the active queue. The
 flexible admin transition rule is a deliberate MVP simplification, not a
 validated ideal workflow.
 
-### 5.10 Customer Status And Tracking
+### 5.11 Customer Status And Tracking
 
 | Feature | Current behavior | Product reason |
 | --- | --- | --- |
 | Submission confirmation | The successful form is replaced by a registered-order state. | Reassures the customer that the details and receipt reached the shop. |
 | Current public status | Shows a customer-friendly Persian status and latest update. | Answers the most common progress question without requiring a DM. |
 | Public timeline | After submission, shows status changes in chronological order without admin identity. | Provides transparent progress while keeping internal staff information private. |
-| Receipt state | Confirms that a receipt was uploaded but does not display it publicly. | Reassures the customer while protecting payment evidence. |
+| Receipt state | States whether a receipt was uploaded but never displays it publicly. | Reassures the customer while protecting payment evidence and accurately representing receipt-less historical imports. |
 | Masked customer summary | Shows full name, partially masked mobile, shortened address, and only the last four postal-code digits. | Helps the customer recognize the submitted record while reducing exposure through a forwarded link. |
 | Tracking code | Displays and copies the operator-entered code when present. | Lets the same link answer post-shipment tracking questions. |
+| Shop support action | When configured, the public page can open the shop's Instagram or WhatsApp with the order code in a prepared message. Before submission it offers general help; afterward it offers an information-correction request. | Gives blocked customers a recovery path without making the one-time form editable. |
 
-### 5.11 Persian, Mobile, And Accessible Experience
+### 5.12 Persian, Mobile, Installable, And Accessible Experience
 
 | Feature | Current behavior | Product reason |
 | --- | --- | --- |
 | Persian-only interface | User-facing copy, errors, labels, numbers, dates, and statuses are designed for Persian speakers. | Matches the initial market instead of adding unused localization complexity. |
 | Full RTL layout | The page direction, forms, cards, and navigation follow right-to-left reading. Technical values use LTR where necessary. | Makes the product natural to read while keeping URLs, mobile numbers, card numbers, and tracking codes usable. |
 | Mobile-first operations | Admin and customer screens use a centered content width of roughly 480px even on desktop. | Optimizes for phones and Instagram's in-app browser rather than building separate desktop behavior. |
+| Installable operator app | Supported browsers can install the authenticated interface to the home screen for standalone launch; iOS users receive Safari instructions. The service worker does not cache application data, so network access is still required. | Gives frequent operators app-like access without maintaining a native application or implying offline support. |
 | Persian-aware dates and digits | Native locale formatting is used, and common Persian/Arabic numeric input is normalized. | Reduces cognitive and input friction for Iranian users. |
 | Touch and keyboard basics | Large controls, semantic labels, visible focus, inline alerts, live states, and reduced-motion support are present. | Keeps the core journey usable across phones, keyboards, and assistive technology without a separate UI mode. |
 
@@ -279,14 +311,17 @@ accidentally during feature work:
    cannot silently create duplicates.
 4. The customer must not need an account, password, app, SMS, or email.
 5. Each customer link represents one order and exposes only public order data.
-6. Customer details and exactly one valid receipt are committed together.
-7. Receipt upload means "waiting for payment review," not "paid."
+6. In the live customer-submission flow, customer details and exactly one valid
+   receipt are committed together. Operator-only historical import is an
+   explicit exception and may omit the receipt.
+7. Customer receipt upload means "waiting for payment review," not "paid."
 8. Customer submission is one-time; only an authorized shop operator can make
    later corrections.
 9. Full mobile, full address, full postal code, receipts, internal notes,
-   Instagram usernames, and admin identity must never appear in public order
-   responses. The current public summary intentionally includes the customer's
-   full name.
+   customer Instagram usernames, and admin identity must never appear in public
+   order responses. The current public summary intentionally includes the
+   customer's full name, and configured support may expose the shop's Instagram
+   username.
 10. Every admin order and receipt action remains scoped to an assigned shop.
 11. Product images may be public, but receipts must remain protected.
 12. The UI remains Persian, RTL, mobile-first, and usable at roughly 320-480px.
@@ -298,6 +333,8 @@ accidentally during feature work:
 - Money is stored and shown as positive integer toman amounts.
 - Each order item snapshots its unit price at creation.
 - The order's total can intentionally differ from the sum of item prices.
+- Each order snapshots the active payment card number and instructions, so
+  changing shop payment settings affects only future orders.
 - Product names and images are not snapshotted. Editing a product changes how
   that product appears in old orders, but does not change old unit prices.
 - Customer links are high-entropy secrets but are currently stored so the admin
@@ -344,13 +381,15 @@ The current trust limits are equally important:
 - A public health endpoint verifies database connectivity.
 - Production deployment supports TLS through Caddy, persistent volumes,
   graceful shutdown, and a non-root application container.
-- Deployment documentation includes coordinated database/media backup and
-  restore procedures.
+- A nightly same-host job coordinates PostgreSQL dumps with append-only receipt
+  and product-image backups; deployment documentation also covers manual
+  off-site download and restore procedures.
 - Admin accounts are created or reset with a seed command.
-- Shops, payment details, logos, and admin-shop assignments currently require
-  direct database provisioning outside the product UI. The checked-in
-  deployment runbook still describes the removed single-owner schema and must
-  be corrected before it can be used for this task.
+- Shop creation, name/logo branding, activation, and admin-shop assignments
+  currently require direct database provisioning outside the product UI. The
+  deployment runbook contains current multi-admin provisioning SQL. Assigned
+  operators manage payment cards, support contacts, and sharing-message settings
+  from the Account screen.
 
 These choices keep the pilot inexpensive and understandable, but they are not
 a horizontally scalable SaaS architecture.
@@ -375,7 +414,8 @@ it does not create or automate the sale.
 
 - No public registration or self-service trial activation.
 - No admin invitation, role, permission, team, password-change, or recovery UI.
-- No shop creation, editing, branding, payment-settings, or assignment UI.
+- No shop creation, name/logo branding, activation, or assignment UI. Payment
+  cards, support contacts, and sharing-message text are operator-managed.
 - No billing, subscription, or organization model.
 
 These remain manual so the pilot can validate workflow value before investing
@@ -405,7 +445,6 @@ fulfillment systems.
 
 - No analytics dashboard, accounting report, financial reconciliation, or
   order export.
-- No pagination beyond the current 100-order list cap.
 - No data retention controls, customer deletion, or media quota.
 - No automated off-site backup or backup-failure alerting.
 
@@ -416,24 +455,23 @@ product discussion should account for.
 
 | Gap or risk | Why it matters |
 | --- | --- |
-| Pilot measurement is incomplete | Successful creation records `order_create_started` retrospectively from client-reported elapsed time plus `order_created`; it does not observe abandoned or failed starts. Successful copy from the post-create screen records `order_link_copied`, but later copies from order details do not. Link opens, form completion, status views, status changes, and CSV export are absent, so core adoption hypotheses cannot yet be measured reliably. |
-| Shop onboarding is manual | Every new pilot shop needs technical database/operator work before it can use the product, and the current deployment runbook's provisioning SQL is outdated. |
+| Pilot measurement is incomplete | Successful normal creation records `order_create_started` retrospectively from client-reported elapsed time plus `order_created`; it does not observe abandoned or failed starts. Successful clipboard copies from the post-create screen record `order_link_copied`, while native-share success, historical imports, and later order-detail copies do not. Public support clicks record channel and action type, but link opens, form completion, status views, status changes, and CSV export remain absent. |
+| Shop onboarding is manual | Every new pilot shop still needs technical database/operator work before it can use the product, although the deployment runbook now contains current provisioning SQL. |
 | Customer links live indefinitely | A leaked or forwarded link remains usable and there is no operator recovery action. |
 | Customer data has indefinite retention | Addresses, mobile numbers, and receipts accumulate without deletion controls or a documented product retention policy. |
 | Statuses are unrestricted | Flexibility is fast, but an operator can skip payment review, move shipped orders backward, or create inconsistent histories. |
+| Receipt-less payment-review copy conflicts | A historical import can start in `waiting_payment` without a receipt. Its public page correctly states that no receipt was uploaded but also uses the generic status message that says the shop is reviewing a receipt. |
 | Historical product display can change | Renaming or replacing a product image changes old order presentation because only unit price is snapshotted. |
 | Customer submission is irreversible | Mistakes require operator intervention; the customer cannot replace a wrong receipt or address. |
-| Order list is capped at 100 | Pilot volumes are supported, but older matching orders become unavailable as a shop grows. |
 | Local media and in-memory throttling limit scaling | Multiple application instances would require shared media storage and coordinated rate limiting. |
 | Frontend verification is manual | There are no automated React, browser, narrow-screen, RTL, or accessibility tests. |
-| Public support path is missing | A blocked customer is told to contact the shop, but the public order does not provide a shop contact action. |
 
 ## 12. Product Hypotheses And Success Signals
 
 The MVP exists to test these hypotheses, not simply to accumulate features:
 
 1. A shop will register most confirmed Instagram sales if order creation and
-   link copying take less than 30 seconds.
+   customer handoff take less than 30 seconds.
 2. Customers will complete a short account-free form from an Instagram link
    without needing operator assistance.
 3. Keeping address, receipt, products, and status together will nearly eliminate
@@ -468,7 +506,7 @@ the core workflow.
 
 - Are confirmed sales consistently entered into Radif? If not, at which step
   does the operator return to DMs or notes?
-- Is create-and-copy actually below 30 seconds on the operator's phone?
+- Is create-and-send or share actually below 30 seconds on the operator's phone?
 - Does manual shop setup prevent meaningful pilot growth?
 
 ### Customer Completion
@@ -483,7 +521,7 @@ the core workflow.
 
 - Does the dashboard become the first place operators look for an order?
 - Which mistakes or delays still force them back into Instagram conversations?
-- At what order volume do pagination, assignment, reminders, or stricter status
+- At what order volume do assignment, reminders, or stricter status
   rules become necessary?
 
 ### Trust And Privacy
@@ -533,54 +571,12 @@ Before selecting a roadmap, prefer collecting missing evidence over building a
 speculative system. The product succeeds when it removes operational disorder
 without becoming more work than the Instagram workflow it supports.
 
+## 15. Candidate Next Steps
 
+These candidates remain unimplemented and should still be validated against
+pilot evidence before becoming a roadmap.
 
-
-<!-- Next steps -->
-
-3. Optimize the create-and-send handoff without integrating Instagram
-
-Observed problem or evidence: Order creation speed is Radif’s primary adoption constraint. The existing copy behavior is thoughtful, but actual creation time and copy failures are not properly observed.
-
-Affected user and workflow step: Shop operator, from confirmed sale to sending the order link in the Instagram conversation.
-
-Why the current product is insufficient: Automatic copying may fail in mobile or in-app browsers. Even when it works, the operator still switches to Instagram, finds the conversation and writes an explanatory message. Radif does not know how often this causes delay or abandonment.
-
-Smallest test or change:
-
-Add a “Create and share” action using the phone’s native share sheet, while retaining copy fallback.
-Generate a ready-to-send Persian message containing the shop name, order code, purpose of the link and the link itself.
-Only add optimizations such as recent-products-first, duplicate-last-order or saved quantities when the recordings show those exact bottlenecks.
-
-This captures much of the benefit of Instagram integration without API work.
-
-Rule, risk or metric affected: Product rules 1–3, under-30-second creation, retry safety, capture rate and the requirement not to disrupt conversational selling.
-
-Stage: Must-have now.
-
-
-4. Give blocked customers a recovery path
-
-Observed problem or evidence: The current public experience has no direct shop-contact action. Customer submission is one-time, so a wrong address or receipt requires operator intervention.
-
-Affected user and workflow step: Customer during form completion and immediately after submitting.
-
-Why the current product is insufficient: When something goes wrong, the customer must manually return to Instagram, locate the shop and explain the order. Some customers may abandon instead.
-
-Smallest test or change: Add two actions:
-
-Before submission: “پیام به فروشگاه”, opening the shop’s Instagram or WhatsApp contact with the order code.
-After submission: “درخواست اصلاح اطلاعات”, opening a prepared message such as “برای سفارش ۱۲۳ نیاز به اصلاح اطلاعات دارم.”
-
-Track clicks and ask operators what customers needed help with. Do not build customer self-editing yet. First learn whether mistakes concern address, receipt, payment instructions, trust or connectivity.
-
-Rule, risk or metric affected: Customer completion, unassisted completion, the missing public-support-path risk, one-time submission and account-free access.
-
-Stage: Must-have now. Self-service editing is later work only if correction frequency is meaningful.
-
-
-
-5. Add minimum recovery controls for customer links
+### 15.1 Add Minimum Recovery Controls For Customer Links
 
 Observed problem or evidence: Customer links are permanent bearer secrets. A forwarded or leaked link cannot be revoked, and the public response continues to reveal order information indefinitely.
 
@@ -603,7 +599,7 @@ Rule, risk or metric affected: Public-data rule, bearer-link risk, indefinite-re
 Stage: Must-have before expanding materially beyond the two pilots.
 
 
-8. Add customer notifications only after testing operator behavior
+### 15.2 Add Customer Notifications Only After Testing Operator Behavior
 
 Observed problem or evidence: The reusable status link can reduce support questions, but it does not proactively tell customers that payment was accepted or an order shipped.
 
