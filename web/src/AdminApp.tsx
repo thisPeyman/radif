@@ -1,4 +1,4 @@
-import { ChevronDown, ClipboardList, Download, Package, Plus, Store, UserRound, X } from "lucide-react";
+import { ChartColumn, ChevronDown, ClipboardList, Download, Package, Plus, Store, UserRound, X } from "lucide-react";
 import { lazy, Suspense, useState } from "react";
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router";
 import { LoadingScreen } from "./components";
@@ -11,6 +11,7 @@ const AdminOrderPage = lazy(() => import("./pages/AdminOrderPage"));
 const ProductsPage = lazy(() => import("./pages/ProductsPage"));
 const ProductFormPage = lazy(() => import("./pages/ProductFormPage"));
 const AccountPage = lazy(() => import("./pages/AccountPage"));
+const ReportPage = lazy(() => import("./pages/ReportPage"));
 
 function isStandalone() {
   return window.matchMedia("(display-mode: standalone)").matches || Boolean((navigator as Navigator & { standalone?: boolean }).standalone);
@@ -53,6 +54,7 @@ const navigation = [
   { to: "/orders", label: "سفارش‌ها", icon: ClipboardList },
   { to: "/orders/new", label: "سفارش جدید", icon: Plus },
   { to: "/products", label: "محصول‌ها", icon: Package },
+  { to: "/report", label: "گزارش", icon: ChartColumn },
   { to: "/account", label: "حساب", icon: UserRound },
 ];
 
@@ -151,7 +153,7 @@ export default function AdminApp({ me, installPrompt, onInstallDone, onShopUpdat
   function changeShop(id: number) {
     setShopID(id);
     localStorage.setItem("radif_shop_id", String(id));
-    navigate(location.pathname.startsWith("/products") ? "/products" : "/orders");
+    navigate(location.pathname.startsWith("/products") ? "/products" : location.pathname === "/report" ? "/report" : "/orders");
   }
   async function logout() {
     await api<void>("/api/session", { method: "DELETE" });
@@ -172,6 +174,7 @@ export default function AdminApp({ me, installPrompt, onInstallDone, onShopUpdat
             <Route path="/products" element={<ProductsPage key={selected.id} shop={selected} />} />
             <Route path="/products/new" element={<ProductFormPage key={selected.id} shop={selected} mode="create" />} />
             <Route path="/products/:productID/edit" element={<ProductFormPage key={`${selected.id}-${location.pathname}`} shop={selected} mode="edit" />} />
+            <Route path="/report" element={<ReportPage key={selected.id} shop={selected} />} />
             <Route path="/account" element={<AccountPage me={me} shop={selected} onShopUpdated={onShopUpdated} onLogout={logout} />} />
             <Route path="*" element={<Navigate to="/orders/new" replace />} />
           </Routes>

@@ -137,6 +137,7 @@ func newServer(db *gorm.DB, cfg config) *echo.Echo {
 	e.GET("/api/me", me(db), requireAdmin(db, cfg))
 	e.GET("/api/product-images/:file", getProductImage(cfg))
 	e.GET("/api/shops/:shopID/products", products(db), requireAdmin(db, cfg), requireShopAccess(db))
+	e.GET("/api/shops/:shopID/report", shopReport(db), requireAdmin(db, cfg), requireShopAccess(db))
 	e.PATCH("/api/shops/:shopID/support", updateShopSupport(db), requireAdmin(db, cfg), requireShopAccess(db), origin)
 	e.POST("/api/shops/:shopID/payment-cards", createPaymentCard(db), requireAdmin(db, cfg), requireShopAccess(db), origin)
 	e.PATCH("/api/shops/:shopID/payment-cards/:cardID", updatePaymentCard(db), requireAdmin(db, cfg), requireShopAccess(db), origin)
