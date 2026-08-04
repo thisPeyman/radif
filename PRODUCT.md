@@ -170,8 +170,8 @@ provide delivery details and a receipt.
 | Feature | Current behavior | Product reason |
 | --- | --- | --- |
 | Operator-only import | An operator can register an existing order from the active catalog with its actual positive amount, required customer details, and delivery date, including a past date. | Brings orders already tracked in DMs or notebooks into the operational queue without asking the customer to repeat an old workflow. |
-| Current-status entry | An imported order must start in `waiting_payment`, `paid`, `preparing`, `shipped`, or `cancelled`; `waiting_info` is not allowed. | Treats the customer information as already collected and avoids opening the public submission form. |
-| Optional historical evidence | Postal code, Instagram username, internal note, and one receipt are optional. The selected products, amount, and receipt cannot be corrected after import. | Accepts incomplete historical records while making the irreversible fields explicit in a review step. |
+| Current-status entry | An imported order must start in `waiting_payment`, `paid`, `preparing`, `shipped`, or `cancelled`; `waiting_info` is not allowed, and `waiting_payment` requires a receipt. | Treats the customer information as already collected, avoids reopening the public submission form, and reserves payment review for orders with evidence to review. |
+| Optional historical evidence | Postal code, Instagram username, internal note, and one receipt are optional unless `waiting_payment` is selected. The selected products, amount, and receipt cannot be corrected after import. | Accepts incomplete historical records while making the irreversible fields explicit in a review step. |
 | Retry-safe review and creation | The operator reviews the record before submission, and a browser-held creation key gives imports the same duplicate protection as normal creation. The selected status is recorded as the first history entry. | Prevents transcription mistakes and duplicate imports while preserving a useful starting point for later status history. |
 | Import-time history | The original creation and status-change times cannot be entered. Order age, latest update, and initial history use the time of import. | Keeps the import form small, while making clear that Radif is not reconstructing a historically accurate timeline. |
 
@@ -210,8 +210,8 @@ must not be exposed in public analytics, logs, screenshots, or support material.
 
 The customer is explicitly told that uploading a receipt does not confirm
 payment. The shop operator remains responsible for checking it. Historical
-import is the exception to the receipt requirement: it can mark customer details
-as submitted without attaching a receipt.
+import can mark customer details as submitted without attaching a receipt, but
+such an order cannot use `waiting_payment`.
 
 ### 5.8 Order Dashboard And Triage
 
@@ -250,7 +250,7 @@ receipt after creation or import.
 | Status | Product meaning |
 | --- | --- |
 | `waiting_info` | The order exists, but the customer has not submitted details and a receipt. |
-| `waiting_payment` | Customer details exist and the shop must verify payment manually. A normally submitted order has a receipt; a historical import may not. |
+| `waiting_payment` | Customer details and a receipt exist, and the shop must verify payment manually. |
 | `paid` | The shop has manually accepted the payment. |
 | `preparing` | Fulfillment work is in progress. |
 | `shipped` | The order has been dispatched. |
@@ -260,11 +260,13 @@ Current transition rules:
 
 - A new order starts at `waiting_info`.
 - Customer submission changes `waiting_info` to `waiting_payment`.
-- Historical import starts in any status except `waiting_info` and records that
-  status as its initial history entry.
+- Historical import starts in any status except `waiting_info`, requires a
+  receipt for `waiting_payment`, and records its status as the initial history
+  entry.
 - Only an operator can decide that an order is `paid`.
-- Operators may currently move directly between any statuses, including moving
-  backward or restoring a cancelled order.
+- Operators may move directly between statuses except that submitted orders
+  cannot return to `waiting_info`, and receipt-less orders cannot enter
+  `waiting_payment`.
 - Re-saving the same status does not create duplicate history.
 - Orders created at least 48 hours ago and currently in `waiting_info` are
   cancelled automatically at startup or during an hourly cleanup. An old order
@@ -313,8 +315,8 @@ accidentally during feature work:
 4. The customer must not need an account, password, app, SMS, or email.
 5. Each customer link represents one order and exposes only public order data.
 6. In the live customer-submission flow, customer details and exactly one valid
-   receipt are committed together. Operator-only historical import is an
-   explicit exception and may omit the receipt.
+   receipt are committed together. Operator-only historical import may omit the
+   receipt, but a receipt-less order cannot use `waiting_payment`.
 7. Customer receipt upload means "waiting for payment review," not "paid."
 8. Customer submission is one-time; only an authorized shop operator can make
    later corrections.
@@ -463,8 +465,7 @@ product discussion should account for.
 | Shop onboarding is manual | Every new pilot shop still needs technical database/operator work before it can use the product, although the deployment runbook now contains current provisioning SQL. |
 | Customer links live indefinitely | Links do not expire or support disable-only revocation; a leaked link remains usable until an operator rotates it. |
 | Customer data has indefinite retention | Addresses, mobile numbers, and receipts accumulate without deletion controls or a documented product retention policy. |
-| Statuses are unrestricted | Flexibility is fast, but an operator can skip payment review, move shipped orders backward, or create inconsistent histories. |
-| Receipt-less payment-review copy conflicts | A historical import can start in `waiting_payment` without a receipt. Its public page correctly states that no receipt was uploaded but also uses the generic status message that says the shop is reviewing a receipt. |
+| Status transitions remain flexible | Flexibility is fast, but an operator can still skip payment review, move shipped orders backward, or create unusual histories outside the two enforced information and receipt prerequisites. |
 | Historical product display can change | Renaming or replacing a product image changes old order presentation because only unit price is snapshotted. |
 | Customer submission is irreversible | Mistakes require operator intervention; the customer cannot replace a wrong receipt or address. |
 | Local media and in-memory throttling limit scaling | Multiple application instances would require shared media storage and coordinated rate limiting. |

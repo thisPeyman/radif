@@ -389,7 +389,7 @@ func TestOrderOperations(t *testing.T) {
 		"customer_full_name": "سارا احمدی", "customer_mobile": "09123456789",
 		"customer_address": "تهران، خیابان آزمایش", "customer_postal_code": "1234567890",
 		"customer_note": "طبقه دوم", "customer_submitted_at": now,
-		"instagram_username": "sara_shop", "status": waitingPaymentStatus,
+		"instagram_username": "sara_shop", "receipt_file_path": "operations.png", "status": waitingPaymentStatus,
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -405,7 +405,7 @@ func TestOrderOperations(t *testing.T) {
 	} {
 		t.Run("search "+name, func(t *testing.T) {
 			response := request(e, http.MethodGet, fmt.Sprintf("/api/orders?shopId=%d&q=%s&status=%s", order.ShopID, url.QueryEscape(query), waitingPaymentStatus), "", "", cookie)
-			if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "سارا احمدی") || !strings.Contains(response.Body.String(), `"receiptUploaded":false`) {
+			if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "سارا احمدی") || !strings.Contains(response.Body.String(), `"receiptUploaded":true`) {
 				t.Fatalf("search returned %d: %s", response.Code, response.Body.String())
 			}
 		})
@@ -444,6 +444,18 @@ func TestOrderOperations(t *testing.T) {
 	}
 	if response := request(e, http.MethodPatch, fmt.Sprintf("/api/orders/%d", order.ID), `{"status":"unknown"}`, testOrigin, cookie); response.Code != http.StatusBadRequest {
 		t.Fatalf("invalid status update returned %d", response.Code)
+	}
+	if err := db.Model(&order).Update("receipt_file_path", "").Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range []string{waitingInfoStatus, waitingPaymentStatus} {
+		response := request(e, http.MethodPatch, fmt.Sprintf("/api/orders/%d", order.ID), fmt.Sprintf(`{"status":%q}`, target), testOrigin, cookie)
+		if response.Code != http.StatusConflict {
+			t.Fatalf("invalid transition to %s returned %d: %s", target, response.Code, response.Body.String())
+		}
+	}
+	if err := db.First(&order, order.ID).Error; err != nil || order.Status != "paid" {
+		t.Fatalf("invalid transition changed order: %#v, error %v", order, err)
 	}
 	public := request(e, http.MethodGet, "/api/o/"+order.SecretToken, "", "", nil)
 	if public.Code != http.StatusOK || !strings.Contains(public.Body.String(), `"shipmentTrackingCode":"TRACK-123"`) || strings.Contains(public.Body.String(), `"receiptUploadAllowed":true`) {

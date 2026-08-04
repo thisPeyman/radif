@@ -125,7 +125,11 @@ export default function AdminOrderPage() {
       <section className={`mt-5 rounded-3xl border-r-4 bg-white p-5 shadow-sm ${statusStyles[order.status]?.rail ?? "border-ink"}`}>
         <label className="text-sm font-black" htmlFor="admin-order-status">وضعیت سفارش</label>
         <select id="admin-order-status" className="field mt-2" value={status} onChange={(event) => setStatus(event.target.value)}>
-          {Object.entries(adminStatusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          {Object.entries(adminStatusLabels).map(([value, label]) => {
+            const infoAlreadySubmitted = value === "waiting_info" && order.customerSubmitted;
+            const missingReceipt = value === "waiting_payment" && !order.receiptUploaded;
+            return <option key={value} value={value} disabled={infoAlreadySubmitted || missingReceipt}>{label}{infoAlreadySubmitted ? " (اطلاعات ثبت شده)" : missingReceipt ? " (نیازمند رسید)" : ""}</option>;
+          })}
         </select>
         <button className="primary-button mt-3 w-full" type="button" onClick={() => saveChanges("status", { status })} disabled={Boolean(saving) || status === order.status}>
           {saving === "status" && <LoaderCircle className="size-5 animate-spin" />}

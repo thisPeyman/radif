@@ -103,6 +103,9 @@ func importHistoricalOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 		if input.Status == waitingInfoStatus || !validOrderStatuses[input.Status] {
 			return echo.NewHTTPError(http.StatusBadRequest, "وضعیت سفارش قدیمی معتبر نیست.")
 		}
+		if input.Status == waitingPaymentStatus && fileHeader == nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "برای وضعیت در انتظار تأیید پرداخت، تصویر رسید الزامی است.")
+		}
 		if err := validateCustomerDetails(customerDetails{
 			fullName: input.CustomerFullName, mobile: input.CustomerMobile, address: input.CustomerAddress, postalCode: input.CustomerPostalCode,
 		}); err != nil {

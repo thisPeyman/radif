@@ -76,6 +76,10 @@ export default function HistoricalOrderPage({ shop, onBusyChange }: { shop: Shop
       setError("کمی صبر کنید تا تصویر رسید آماده شود.");
       return;
     }
+    if (status === "waiting_payment" && !receipt) {
+      setError("برای وضعیت در انتظار تأیید پرداخت، تصویر رسید را انتخاب کنید.");
+      return;
+    }
     const numericAmount = Number(amount);
     const mobile = normalizeIranianMobile(customer.mobile);
     const postalCode = normalizeDigits(customer.postalCode);
@@ -252,7 +256,7 @@ export default function HistoricalOrderPage({ shop, onBusyChange }: { shop: Shop
           </section>
 
           <section className="mt-8 border-r-2 border-ledger pr-4">
-            <StepHeading number="۴" title="وضعیت و مدرک">وضعیت فعلی را مشخص کنید؛ تصویر رسید برای سفارش قدیمی اختیاری است.</StepHeading>
+            <StepHeading number="۴" title="وضعیت و مدرک">وضعیت فعلی را مشخص کنید؛ رسید فقط برای وضعیت در انتظار تأیید پرداخت الزامی است.</StepHeading>
             <fieldset className="mt-5">
               <legend className="text-sm font-black">وضعیت فعلی سفارش</legend>
               <div className="mt-3 grid grid-cols-2 gap-2">
@@ -265,7 +269,7 @@ export default function HistoricalOrderPage({ shop, onBusyChange }: { shop: Shop
                 ))}
               </div>
             </fieldset>
-            <div className="mt-5"><ReceiptPicker id="historical-receipt" file={receipt} onChange={setReceipt} onBusyChange={setReceiptBusy} /><p className="mt-2 text-xs text-ink/60">می‌توانید سفارش را بدون رسید هم ثبت کنید.</p></div>
+            <div className="mt-5"><ReceiptPicker id="historical-receipt" file={receipt} onChange={setReceipt} onBusyChange={setReceiptBusy} /><p className="mt-2 text-xs text-ink/60">بدون رسید هم می‌توانید سفارش را ثبت کنید، مگر اینکه وضعیت آن در انتظار تأیید پرداخت باشد.</p></div>
             <details className="mt-5 rounded-3xl border border-ledger bg-white">
               <summary className="flex min-h-14 list-none items-center justify-between px-4 font-bold"><span>جزئیات اختیاری</span><ChevronDown className="details-chevron size-5 text-ink/70" aria-hidden="true" /></summary>
               <div className="space-y-5 border-t border-ledger p-4">

@@ -107,7 +107,7 @@ func TestImportHistoricalOrder(t *testing.T) {
 		t.Fatalf("import mismatch returned %d: %s", mismatch.Code, mismatch.Body.String())
 	}
 
-	input["createKey"], input["amount"], input["status"] = "historical-receipt", 650000, "paid"
+	input["createKey"], input["amount"], input["status"] = "historical-receipt", 650000, waitingPaymentStatus
 	png := append([]byte("\x89PNG\r\n\x1a\n"), bytes.Repeat([]byte{0}, 32)...)
 	withReceipt := historicalOrderRequest(t, e, cookie, input, png)
 	if withReceipt.Code != http.StatusCreated {
@@ -120,7 +120,7 @@ func TestImportHistoricalOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	var receiptOrder Order
-	if err := db.First(&receiptOrder, receiptOutput.ID).Error; err != nil || filepath.Ext(receiptOrder.ReceiptFilePath) != ".png" {
+	if err := db.First(&receiptOrder, receiptOutput.ID).Error; err != nil || receiptOrder.Status != waitingPaymentStatus || filepath.Ext(receiptOrder.ReceiptFilePath) != ".png" {
 		t.Fatalf("unexpected receipt order: %#v, error %v", receiptOrder, err)
 	}
 	if _, err := os.Stat(filepath.Join(cfg.receiptDir, receiptOrder.ReceiptFilePath)); err != nil {
@@ -144,6 +144,10 @@ func TestImportHistoricalOrderValidationAndOwnership(t *testing.T) {
 	}
 	if response := historicalOrderRequest(t, e, cookie, input, nil); response.Code != http.StatusBadRequest {
 		t.Fatalf("waiting-info import returned %d: %s", response.Code, response.Body.String())
+	}
+	input["createKey"], input["status"] = "historical-missing-receipt", waitingPaymentStatus
+	if response := historicalOrderRequest(t, e, cookie, input, nil); response.Code != http.StatusBadRequest {
+		t.Fatalf("receipt-less waiting-payment import returned %d: %s", response.Code, response.Body.String())
 	}
 	other := createOtherOrder(t, db)
 	var otherProduct Product

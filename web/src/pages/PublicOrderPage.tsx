@@ -171,7 +171,7 @@ export default function PublicOrderPage() {
           <section className="mt-7 border-r-4 border-teal bg-white px-5 py-4 shadow-sm">
             <p className="text-xs font-bold text-ink/70">وضعیت سفارش</p>
             <p className="mt-1 text-lg font-black text-teal">{publicStatusLabels[order.status] ?? order.status}</p>
-            {order.status === "waiting_payment" && <p className="mt-2 text-sm text-ink/70">فروشگاه در حال بررسی رسید پرداخت شماست.</p>}
+            {order.status === "waiting_payment" && order.receiptUploaded && <p className="mt-2 text-sm text-ink/70">فروشگاه در حال بررسی رسید پرداخت شماست.</p>}
             {order.customerSubmitted && <p className="mt-2 text-xs text-ink/60">آخرین به‌روزرسانی: {persianDateTime(order.updatedAt)}</p>}
           </section>
 

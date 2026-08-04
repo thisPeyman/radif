@@ -355,6 +355,12 @@ func updateOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 			statusChanged := input.Status != nil && *input.Status != order.Status
 			previousStatus := order.Status
 			if statusChanged {
+				if *input.Status == waitingInfoStatus && order.CustomerSubmittedAt != nil {
+					return echo.NewHTTPError(http.StatusConflict, "اطلاعات مشتری قبلاً ثبت شده است و سفارش نمی‌تواند در انتظار اطلاعات باشد.")
+				}
+				if *input.Status == waitingPaymentStatus && order.ReceiptFilePath == "" {
+					return echo.NewHTTPError(http.StatusConflict, "برای وضعیت در انتظار تأیید پرداخت، تصویر رسید الزامی است.")
+				}
 				updates["status"] = *input.Status
 			}
 			if len(updates) > 0 {
