@@ -88,7 +88,7 @@ export default function HistoricalOrderPage({ shop, onBusyChange }: { shop: Shop
       return;
     }
     if (!deliveryDate) {
-      setError("تاریخ تحویل قدیمی را انتخاب کنید.");
+      setError("تاریخ تحویل را انتخاب کنید.");
       return;
     }
     if (!customer.fullName.trim() || !customer.address.trim() || !/^09\d{9}$/.test(mobile) || (postalCode !== "" && !/^\d{10}$/.test(postalCode))) {
@@ -142,7 +142,7 @@ export default function HistoricalOrderPage({ shop, onBusyChange }: { shop: Shop
       reset();
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "سفارش قدیمی ثبت نشد. دوباره تلاش کنید.");
+      setError(reason instanceof Error ? reason.message : "سفارش ثبت نشد. دوباره تلاش کنید.");
     } finally {
       setPending(false);
       onBusyChange(false);
@@ -194,7 +194,7 @@ export default function HistoricalOrderPage({ shop, onBusyChange }: { shop: Shop
         <button className="secondary-button" type="button" onClick={() => setReviewing(false)} disabled={pending}>اصلاح</button>
         <button className="primary-button" type="button" onClick={submit} disabled={pending || receiptBusy}>
           {pending ? <LoaderCircle className="size-5 animate-spin" aria-hidden="true" /> : <ClipboardCheck className="size-5" aria-hidden="true" />}
-          {pending ? "در حال ثبت…" : "ثبت سفارش قدیمی"}
+          {pending ? "در حال ثبت…" : "ثبت سفارش"}
         </button>
       </div>
     </div>
@@ -241,7 +241,6 @@ export default function HistoricalOrderPage({ shop, onBusyChange }: { shop: Shop
             <div className="mt-5">
               <span className="mb-2 block text-sm font-black">تاریخ تحویل</span>
               <DeliveryDateSelect id="historical-delivery-date" value={deliveryDate} onChange={setDeliveryDate} allowPast />
-              <p className="mt-2 text-xs leading-6 text-ink/65">در این فرم، تاریخ گذشته هم قابل انتخاب است.</p>
             </div>
           </section>
 

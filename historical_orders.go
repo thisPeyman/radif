@@ -101,7 +101,7 @@ func importHistoricalOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 			return echo.NewHTTPError(http.StatusBadRequest, "تاریخ تحویل معتبر نیست.")
 		}
 		if input.Status == waitingInfoStatus || !validOrderStatuses[input.Status] {
-			return echo.NewHTTPError(http.StatusBadRequest, "وضعیت سفارش قدیمی معتبر نیست.")
+			return echo.NewHTTPError(http.StatusBadRequest, "وضعیت سفارش معتبر نیست.")
 		}
 		if input.Status == waitingPaymentStatus && fileHeader == nil {
 			return echo.NewHTTPError(http.StatusBadRequest, "برای وضعیت در انتظار تأیید پرداخت، تصویر رسید الزامی است.")
