@@ -267,7 +267,7 @@ export default function AdminOrderPage() {
             <div className="flex items-center justify-between gap-3"><p className="font-black">پرداخت نهایی</p>{order.finalPaymentConfirmed && <span className="rounded-full bg-teal px-3 py-1 text-xs font-black text-white">تسویه شد</span>}</div>
             {!order.finalPaymentRequested && (
               <>
-                <p className="mt-2 text-sm leading-7 text-ink/70">پس از تأیید پرداخت اول، درخواست را ثبت کنید. شماره کارت فعال همان لحظه برای این سفارش نگه داشته می‌شود.</p>
+                <p className="mt-2 text-sm leading-7 text-ink/70">پس از تأیید پرداخت اول، درخواست را ثبت کنید.</p>
                 {!finalRequestAllowed && <p className="mt-3 rounded-2xl bg-white p-3 text-sm font-bold text-error">ابتدا رسید و اطلاعات مشتری را دریافت کنید و پرداخت اول را با وضعیت «پرداخت اول تأیید شده» ثبت کنید.</p>}
                 <button className="primary-button mt-4 w-full" type="button" onClick={requestFinalPayment} disabled={Boolean(saving) || !finalRequestAllowed}>
                   {saving === "requestFinal" ? <LoaderCircle className="size-5 animate-spin" aria-hidden="true" /> : <Send className="size-5" aria-hidden="true" />}
@@ -280,7 +280,6 @@ export default function AdminOrderPage() {
               <>
                 <dl className="mt-4 grid gap-3 rounded-2xl bg-white p-4 text-sm">
                   <div><dt className="text-xs font-bold text-ink/55">مبلغ باقی‌مانده</dt><dd className="mt-1 font-black">{persianNumber(order.finalPaymentAmount ?? 0)} تومان</dd></div>
-                  <div><dt className="text-xs font-bold text-ink/55">شماره کارت ثبت‌شده</dt><dd className="mt-1 font-black tracking-wider" dir="ltr">{order.finalPaymentCardNumber.match(/.{1,4}/g)?.join(" ")}</dd></div>
                   {order.finalPaymentRequestedAt && <div><dt className="text-xs font-bold text-ink/55">زمان درخواست</dt><dd className="mt-1 font-bold">{persianDateTime(order.finalPaymentRequestedAt)}</dd></div>}
                 </dl>
                 <button className="secondary-button mt-3 w-full" type="button" onClick={() => copyFinalPaymentMessage()}>
