@@ -28,6 +28,7 @@ export default function PublicOrderPage() {
   const [receiptError, setReceiptError] = useState("");
   const [pending, setPending] = useState(false);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const [amountCopyState, setAmountCopyState] = useState<"idle" | "copied" | "failed">("idle");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -65,6 +66,11 @@ export default function PublicOrderPage() {
   async function copyPaymentCardNumber() {
     if (!order) return;
     try { await navigator.clipboard.writeText(order.paymentCardNumber); setCopyState("copied"); } catch { setCopyState("failed"); }
+  }
+
+  async function copyPaymentAmount() {
+    if (!order) return;
+    try { await navigator.clipboard.writeText(String(order.amount * 10)); setAmountCopyState("copied"); } catch { setAmountCopyState("failed"); }
   }
 
   async function submitDetails(event: FormEvent) {
@@ -195,10 +201,22 @@ export default function PublicOrderPage() {
             </div>
           </section>
 
-          <div className="mt-5 flex items-center justify-between rounded-2xl bg-ledger/70 px-4 py-3">
-            <span className="text-sm font-bold">مبلغ سفارش</span>
-            <strong>{persianNumber(order.amount)} تومان</strong>
-          </div>
+          <button
+            className="mt-5 flex w-full items-center justify-between gap-4 rounded-2xl border border-teal/15 bg-white px-4 py-3.5 text-ink shadow-sm transition hover:border-teal/30 hover:shadow-md active:scale-[0.99]"
+            type="button"
+            onClick={copyPaymentAmount}
+          >
+            <span className="text-right">
+              <span className="block text-xs font-bold text-ink/60">مبلغ سفارش</span>
+              <strong className="mt-1 block text-lg">{persianNumber(order.amount)} تومان</strong>
+              <span className="mt-0.5 block text-xs font-bold text-ink/45">{persianNumber(order.amount * 10)} ریال</span>
+            </span>
+            <span className="flex shrink-0 items-center gap-2 rounded-xl bg-teal/8 px-3 py-2 text-xs font-black text-teal">
+              {amountCopyState === "copied" ? <ClipboardCheck className="size-4" aria-hidden="true" /> : <Clipboard className="size-4" aria-hidden="true" />}
+              {amountCopyState === "copied" ? "کپی شد" : "کپی"}
+            </span>
+          </button>
+          {amountCopyState === "failed" && <p className="mt-2 text-sm text-error" role="alert">کپی خودکار ممکن نشد؛ دوباره تلاش کنید.</p>}
 
           <section className="mt-6 rounded-3xl border border-ledger bg-white p-5">
             <h2 className="text-sm font-black">اطلاعات پرداخت فروشگاه</h2>
