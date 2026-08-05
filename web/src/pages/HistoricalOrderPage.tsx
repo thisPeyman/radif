@@ -3,7 +3,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { NavLink } from "react-router";
 import { ErrorNotice, ProductChoices, ReceiptPicker, type SelectedOrderItem } from "../components";
 import DeliveryDateSelect from "../DeliveryDateSelect";
-import { adminStatusLabels, api, normalizeDigits, normalizeIranianMobile, persianDate, persianDigits, persianNumber, randomID, type CreatedOrder, type Product, type Shop } from "../shared";
+import { adminStatusLabels, api, normalizeDigits, normalizeIranianMobile, persianDate, persianDigits, persianNumber, randomID, readLastSalesChannel, rememberSalesChannel, salesChannelLabels, salesChannels, type CreatedOrder, type Product, type SalesChannel, type Shop } from "../shared";
 
 const importStatuses = ["waiting_payment", "paid", "preparing", "shipped", "cancelled"];
 const emptyCustomer = { fullName: "", mobile: "", address: "", postalCode: "" };
@@ -38,7 +38,8 @@ export default function HistoricalOrderPage({ shop, onBusyChange }: { shop: Shop
   const [receipt, setReceipt] = useState<File | null>(null);
   const [receiptBusy, setReceiptBusy] = useState(false);
   const [status, setStatus] = useState("preparing");
-  const [instagram, setInstagram] = useState("");
+  const [salesChannel, setSalesChannel] = useState<SalesChannel>(readLastSalesChannel);
+  const [conversationReference, setConversationReference] = useState("");
   const [note, setNote] = useState("");
   const [createKey, setCreateKey] = useState(() => newHistoricalCreateKey(shop.id));
   const [reviewing, setReviewing] = useState(false);
@@ -108,7 +109,7 @@ export default function HistoricalOrderPage({ shop, onBusyChange }: { shop: Shop
     setCustomer(emptyCustomer);
     setReceipt(null);
     setStatus("preparing");
-    setInstagram("");
+    setConversationReference("");
     setNote("");
     const key = randomID();
     sessionStorage.setItem(`radif_historical_create_key_${shop.id}`, key);
@@ -131,12 +132,14 @@ export default function HistoricalOrderPage({ shop, onBusyChange }: { shop: Shop
       customerMobile: customer.mobile,
       customerAddress: customer.address,
       customerPostalCode: customer.postalCode,
-      instagramUsername: instagram,
+      salesChannel,
+      conversationReference,
       internalNote: note,
     }));
     if (receipt) form.append("receipt", receipt);
     try {
       const order = await api<CreatedOrder>("/api/orders/import", { method: "POST", body: form });
+      rememberSalesChannel(salesChannel);
       setCreated(order);
       setReviewing(false);
       reset();
@@ -182,12 +185,11 @@ export default function HistoricalOrderPage({ shop, onBusyChange }: { shop: Shop
             <div className="p-5"><p className="text-xs font-bold text-ink/55">رسید پرداخت</p><p className="mt-2 font-black">{receipt ? "پیوست شده" : "بدون رسید"}</p></div>
           </div>
         </div>
-        {(instagram.trim() || note.trim()) && (
-          <div className="mt-4 rounded-3xl bg-ledger/55 p-5 text-sm leading-7">
-            {instagram.trim() && <p><strong>اینستاگرام:</strong> <span dir="ltr">@{instagram.trim().replace(/^@/, "")}</span></p>}
+        <div className="mt-4 rounded-3xl bg-ledger/55 p-5 text-sm leading-7">
+            <p><strong>کانال فروش:</strong> {salesChannelLabels[salesChannel]}</p>
+            {conversationReference.trim() && <p className="mt-2"><strong>مرجع گفتگو:</strong> <span dir="auto">{conversationReference.trim()}</span></p>}
             {note.trim() && <p className="mt-2 whitespace-pre-wrap"><strong>یادداشت داخلی:</strong> {note.trim()}</p>}
-          </div>
-        )}
+        </div>
         {error && <div className="mt-5"><ErrorNotice>{error}</ErrorNotice></div>}
       </section>
       <div className="create-action grid grid-cols-[0.8fr_1.2fr] gap-2">
@@ -269,10 +271,16 @@ export default function HistoricalOrderPage({ shop, onBusyChange }: { shop: Shop
               </div>
             </fieldset>
             <div className="mt-5"><ReceiptPicker id="historical-receipt" file={receipt} onChange={setReceipt} onBusyChange={setReceiptBusy} /><p className="mt-2 text-xs text-ink/60">بدون رسید هم می‌توانید سفارش را ثبت کنید، مگر اینکه وضعیت آن در انتظار تأیید پرداخت باشد.</p></div>
+            <label className="mt-5 block" htmlFor="historical-sales-channel">
+              <span className="mb-2 block text-sm font-black">کانال فروش</span>
+              <select id="historical-sales-channel" className="field" value={salesChannel} onChange={(event) => setSalesChannel(event.target.value as SalesChannel)} required>
+                {salesChannels.map((channel) => <option key={channel} value={channel}>{salesChannelLabels[channel]}</option>)}
+              </select>
+            </label>
             <details className="mt-5 rounded-3xl border border-ledger bg-white">
               <summary className="flex min-h-14 list-none items-center justify-between px-4 font-bold"><span>جزئیات اختیاری</span><ChevronDown className="details-chevron size-5 text-ink/70" aria-hidden="true" /></summary>
               <div className="space-y-5 border-t border-ledger p-4">
-                <label className="block"><span className="mb-2 block text-sm font-bold">نام کاربری اینستاگرام</span><input className="field text-left" dir="ltr" maxLength={101} value={instagram} onChange={(event) => setInstagram(event.target.value)} placeholder="username" /></label>
+                <label className="block"><span className="mb-2 block text-sm font-bold">مرجع گفتگو</span><input className="field" dir="auto" maxLength={100} value={conversationReference} onChange={(event) => setConversationReference(event.target.value)} placeholder="نام کاربری، موبایل، نام نمایشی یا هر نشانه دیگر" /></label>
                 <label className="block"><span className="mb-2 block text-sm font-bold">یادداشت داخلی</span><textarea className="field min-h-24 resize-y py-3" maxLength={1000} value={note} onChange={(event) => setNote(event.target.value)} /></label>
               </div>
             </details>

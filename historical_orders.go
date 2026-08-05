@@ -33,6 +33,8 @@ type historicalOrderInput struct {
 	CustomerPostalCode    string `json:"customerPostalCode"`
 	InstagramUsername     string `json:"instagramUsername"`
 	InternalNote          string `json:"internalNote"`
+	SalesChannel          string `json:"salesChannel,omitempty"`
+	ConversationReference string `json:"conversationReference,omitempty"`
 }
 
 func historicalReceiptHash(file *multipart.FileHeader) (string, error) {
@@ -93,6 +95,14 @@ func importHistoricalOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 		input.CustomerAddress = strings.TrimSpace(input.CustomerAddress)
 		input.CustomerPostalCode = normalizeDigits(input.CustomerPostalCode)
 		input.InstagramUsername = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(input.InstagramUsername), "@"))
+		input.SalesChannel = strings.TrimSpace(input.SalesChannel)
+		input.ConversationReference = strings.TrimSpace(input.ConversationReference)
+		if input.ConversationReference == "" {
+			input.ConversationReference = input.InstagramUsername
+		}
+		if input.SalesChannel == "" {
+			input.SalesChannel = "instagram"
+		}
 		input.InternalNote = strings.TrimSpace(input.InternalNote)
 		if input.CreateKey == "" || len(input.CreateKey) > 100 || input.ShopID == 0 || len(input.Items) == 0 || len(input.Items) > 50 || input.Amount <= 0 || input.Amount > 1<<53-1 {
 			return echo.NewHTTPError(http.StatusBadRequest, "محصول و مبلغ سفارش الزامی است.")
@@ -103,6 +113,9 @@ func importHistoricalOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 		if input.Status == waitingInfoStatus || !validOrderStatuses[input.Status] {
 			return echo.NewHTTPError(http.StatusBadRequest, "وضعیت سفارش معتبر نیست.")
 		}
+		if !validSalesChannels[input.SalesChannel] {
+			return echo.NewHTTPError(http.StatusBadRequest, "کانال فروش معتبر نیست.")
+		}
 		if input.Status == waitingPaymentStatus && fileHeader == nil {
 			return echo.NewHTTPError(http.StatusBadRequest, "برای وضعیت در انتظار تأیید پرداخت، تصویر رسید الزامی است.")
 		}
@@ -111,7 +124,7 @@ func importHistoricalOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 		}); err != nil {
 			return err
 		}
-		if len([]rune(input.InstagramUsername)) > 100 || len([]rune(input.InternalNote)) > 1000 {
+		if len([]rune(input.ConversationReference)) > 100 || len([]rune(input.InternalNote)) > 1000 {
 			return echo.NewHTTPError(http.StatusBadRequest, "متن واردشده بیش از حد طولانی است.")
 		}
 
@@ -129,11 +142,17 @@ func importHistoricalOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 		if err != nil {
 			return err
 		}
+		fingerprintInput := input
+		fingerprintInput.InstagramUsername = input.ConversationReference
+		fingerprintInput.ConversationReference = ""
+		if fingerprintInput.SalesChannel == "instagram" {
+			fingerprintInput.SalesChannel = ""
+		}
 		fingerprintJSON, _ := json.Marshal(struct {
 			Kind        string               `json:"kind"`
 			Input       historicalOrderInput `json:"input"`
 			ReceiptHash string               `json:"receiptHash"`
-		}{Kind: "historical", Input: input, ReceiptHash: receiptHash})
+		}{Kind: "historical", Input: fingerprintInput, ReceiptHash: receiptHash})
 		fingerprint := hashToken(string(fingerprintJSON))
 
 		admin := c.Get(adminContextKey).(*Admin)
@@ -168,7 +187,7 @@ func importHistoricalOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 		order := Order{
 			CreateKey: input.CreateKey, CreateFingerprint: fingerprint, SecretToken: token,
 			ShopID: input.ShopID, Amount: input.Amount, EstimatedDeliveryDate: input.EstimatedDeliveryDate,
-			InstagramUsername: input.InstagramUsername, InternalNote: input.InternalNote,
+			SalesChannel: input.SalesChannel, ConversationReference: input.ConversationReference, InternalNote: input.InternalNote,
 			CustomerFullName: input.CustomerFullName, CustomerMobile: input.CustomerMobile,
 			CustomerAddress: input.CustomerAddress, CustomerPostalCode: input.CustomerPostalCode,
 			Status: input.Status, CustomerSubmittedAt: &now,

@@ -65,7 +65,7 @@ func TestCreateOrderAndRecordCopy(t *testing.T) {
 		t.Fatal(err)
 	}
 	deliveryDate := time.Now().AddDate(0, 0, 7).Format("2006-01-02")
-	body := fmt.Sprintf(`{"createKey":"create-test-1","shopId":%d,"items":[{"productId":%d,"quantity":2},{"productId":%d,"quantity":1}],"amount":1520000,"estimatedDeliveryDate":%q,"instagramUsername":" @customer ","internalNote":" test ","elapsedMs":1234}`, products[0].ShopID, products[0].ID, products[1].ID, deliveryDate)
+	body := fmt.Sprintf(`{"createKey":"create-test-1","shopId":%d,"items":[{"productId":%d,"quantity":2},{"productId":%d,"quantity":1}],"amount":1520000,"estimatedDeliveryDate":%q,"salesChannel":"whatsapp","conversationReference":" سارا ۰۹۱۲۳۴۵۶۷۸۹ ","internalNote":" test ","elapsedMs":1234}`, products[0].ShopID, products[0].ID, products[1].ID, deliveryDate)
 	response := request(e, http.MethodPost, "/api/orders", body, testOrigin, cookie)
 	if response.Code != http.StatusCreated {
 		t.Fatalf("create returned %d: %s", response.Code, response.Body.String())
@@ -91,8 +91,11 @@ func TestCreateOrderAndRecordCopy(t *testing.T) {
 	if err := db.First(&order, output.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if order.Status != waitingInfoStatus || order.EstimatedDeliveryDate != deliveryDate || order.InstagramUsername != "customer" || order.InternalNote != "test" || order.Amount != 1520000 || order.PaymentCardNumber != "6037991812345678" || order.PaymentInstructions != "به نام فروشگاه خانه آبی" {
+	if order.Status != waitingInfoStatus || order.EstimatedDeliveryDate != deliveryDate || order.SalesChannel != "whatsapp" || order.ConversationReference != "سارا ۰۹۱۲۳۴۵۶۷۸۹" || order.InternalNote != "test" || order.Amount != 1520000 || order.PaymentCardNumber != "6037991812345678" || order.PaymentInstructions != "به نام فروشگاه خانه آبی" {
 		t.Fatalf("unexpected order: %#v", order)
+	}
+	if err := db.Model(&order).Update("sales_channel", "sms").Error; err == nil {
+		t.Fatal("database accepted an invalid sales channel")
 	}
 	var items []OrderItem
 	if err := db.Where("order_id = ?", order.ID).Order("product_id").Find(&items).Error; err != nil {
@@ -113,7 +116,7 @@ func TestCreateOrderAndRecordCopy(t *testing.T) {
 	if publicResponse.Code != http.StatusOK || !strings.Contains(publicResponse.Body.String(), deliveryDate) || !strings.Contains(publicResponse.Body.String(), products[0].Name) || !strings.Contains(publicResponse.Body.String(), `"paymentCardNumber":"6037991812345678"`) {
 		t.Fatalf("public order returned %d: %s", publicResponse.Code, publicResponse.Body.String())
 	}
-	if body := publicResponse.Body.String(); strings.Contains(body, "internalNote") || strings.Contains(body, "customerMobile") || strings.Contains(body, "test") {
+	if body := publicResponse.Body.String(); strings.Contains(body, "internalNote") || strings.Contains(body, "salesChannel") || strings.Contains(body, "conversationReference") || strings.Contains(body, "customerMobile") || strings.Contains(body, "۰۹۱۲۳۴۵۶۷۸۹") || strings.Contains(body, "test") {
 		t.Fatalf("public order exposed private data: %s", body)
 	}
 	if err := db.Model(&Shop{}).Where("id = ?", order.ShopID).Updates(map[string]any{"payment_card_number": "5022291012345678", "payment_instructions": "حساب جدید"}).Error; err != nil {
@@ -301,12 +304,14 @@ func TestCreateOrderValidationAndOwnership(t *testing.T) {
 	}
 
 	for name, body := range map[string]string{
-		"missing amount": fmt.Sprintf(`{"createKey":"missing-amount","shopId":%d,"items":[{"productId":%d,"quantity":1}],"amount":0}`, product.ShopID, product.ID),
-		"wrong shop":     fmt.Sprintf(`{"createKey":"wrong-shop","shopId":9999,"items":[{"productId":%d,"quantity":1}],"amount":1}`, product.ID),
-		"duplicate item": fmt.Sprintf(`{"createKey":"duplicate","shopId":%d,"items":[{"productId":%d,"quantity":1},{"productId":%d,"quantity":2}],"amount":1}`, product.ShopID, product.ID, product.ID),
-		"unknown field":  fmt.Sprintf(`{"createKey":"unknown-field","shopId":%d,"items":[{"productId":%d,"quantity":1}],"amount":1,"extra":true}`, product.ShopID, product.ID),
-		"trailing JSON":  fmt.Sprintf(`{"createKey":"trailing","shopId":%d,"items":[{"productId":%d,"quantity":1}],"amount":1}{}`, product.ShopID, product.ID),
-		"past delivery":  fmt.Sprintf(`{"createKey":"past-date","shopId":%d,"items":[{"productId":%d,"quantity":1}],"amount":1,"estimatedDeliveryDate":"2020-01-01"}`, product.ShopID, product.ID),
+		"missing amount":  fmt.Sprintf(`{"createKey":"missing-amount","shopId":%d,"items":[{"productId":%d,"quantity":1}],"amount":0}`, product.ShopID, product.ID),
+		"wrong shop":      fmt.Sprintf(`{"createKey":"wrong-shop","shopId":9999,"items":[{"productId":%d,"quantity":1}],"amount":1}`, product.ID),
+		"duplicate item":  fmt.Sprintf(`{"createKey":"duplicate","shopId":%d,"items":[{"productId":%d,"quantity":1},{"productId":%d,"quantity":2}],"amount":1}`, product.ShopID, product.ID, product.ID),
+		"unknown field":   fmt.Sprintf(`{"createKey":"unknown-field","shopId":%d,"items":[{"productId":%d,"quantity":1}],"amount":1,"extra":true}`, product.ShopID, product.ID),
+		"trailing JSON":   fmt.Sprintf(`{"createKey":"trailing","shopId":%d,"items":[{"productId":%d,"quantity":1}],"amount":1}{}`, product.ShopID, product.ID),
+		"past delivery":   fmt.Sprintf(`{"createKey":"past-date","shopId":%d,"items":[{"productId":%d,"quantity":1}],"amount":1,"estimatedDeliveryDate":"2020-01-01"}`, product.ShopID, product.ID),
+		"invalid channel": fmt.Sprintf(`{"createKey":"invalid-channel","shopId":%d,"items":[{"productId":%d,"quantity":1}],"amount":1,"estimatedDeliveryDate":%q,"salesChannel":"sms"}`, product.ShopID, product.ID, time.Now().AddDate(0, 0, 7).Format("2006-01-02")),
+		"long reference":  fmt.Sprintf(`{"createKey":"long-reference","shopId":%d,"items":[{"productId":%d,"quantity":1}],"amount":1,"estimatedDeliveryDate":%q,"salesChannel":"other","conversationReference":%q}`, product.ShopID, product.ID, time.Now().AddDate(0, 0, 7).Format("2006-01-02"), strings.Repeat("ش", 101)),
 	} {
 		t.Run(name, func(t *testing.T) {
 			response := request(e, http.MethodPost, "/api/orders", body, testOrigin, cookie)
@@ -389,7 +394,7 @@ func TestOrderOperations(t *testing.T) {
 		"customer_full_name": "سارا احمدی", "customer_mobile": "09123456789",
 		"customer_address": "تهران، خیابان آزمایش", "customer_postal_code": "1234567890",
 		"customer_note": "طبقه دوم", "customer_submitted_at": now,
-		"instagram_username": "sara_shop", "receipt_file_path": "operations.png", "status": waitingPaymentStatus,
+		"sales_channel": "telegram", "conversation_reference": "Sara در تلگرام", "receipt_file_path": "operations.png", "status": waitingPaymentStatus,
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -401,7 +406,7 @@ func TestOrderOperations(t *testing.T) {
 		"name":       "سارا",
 		"mobile":     "+۹۸ ۹۱۲ ۳۴۵ ۶۷۸۹",
 		"order code": fmt.Sprintf("#%d", order.ID),
-		"instagram":  "SARA_SHOP",
+		"reference":  "SARA در تلگرام",
 	} {
 		t.Run("search "+name, func(t *testing.T) {
 			response := request(e, http.MethodGet, fmt.Sprintf("/api/orders?shopId=%d&q=%s&status=%s", order.ShopID, url.QueryEscape(query), waitingPaymentStatus), "", "", cookie)
@@ -415,15 +420,15 @@ func TestOrderOperations(t *testing.T) {
 	}
 
 	detail := request(e, http.MethodGet, fmt.Sprintf("/api/orders/%d", order.ID), "", "", cookie)
-	if detail.Code != http.StatusOK || !strings.Contains(detail.Body.String(), cfg.appOrigin+"/o/"+order.SecretToken) || !strings.Contains(detail.Body.String(), "customerPostalCode") || !strings.Contains(detail.Body.String(), "history") {
+	if detail.Code != http.StatusOK || !strings.Contains(detail.Body.String(), cfg.appOrigin+"/o/"+order.SecretToken) || !strings.Contains(detail.Body.String(), `"salesChannel":"telegram"`) || !strings.Contains(detail.Body.String(), `"conversationReference":"Sara در تلگرام"`) || !strings.Contains(detail.Body.String(), "customerPostalCode") || !strings.Contains(detail.Body.String(), "history") {
 		t.Fatalf("detail returned %d: %s", detail.Code, detail.Body.String())
 	}
-	update := `{"status":"paid","shipmentTrackingCode":" TRACK-123 ","customerFullName":"سارا محمدی","customerMobile":"+98 912 345 6789","customerAddress":"نشانی اصلاح‌شده","customerPostalCode":"۱۲۳۴۵۶۷۸۹۰","customerNote":"یادداشت جدید","instagramUsername":" @sara.new ","internalNote":" یادداشت داخلی جدید "}`
+	update := `{"status":"paid","shipmentTrackingCode":" TRACK-123 ","customerFullName":"سارا محمدی","customerMobile":"+98 912 345 6789","customerAddress":"نشانی اصلاح‌شده","customerPostalCode":"۱۲۳۴۵۶۷۸۹۰","customerNote":"یادداشت جدید","salesChannel":"bale","conversationReference":" سارا در بله @sara.new ","internalNote":" یادداشت داخلی جدید "}`
 	response := request(e, http.MethodPatch, fmt.Sprintf("/api/orders/%d", order.ID), update, testOrigin, cookie)
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"status":"paid"`) || !strings.Contains(response.Body.String(), `"shipmentTrackingCode":"TRACK-123"`) || !strings.Contains(response.Body.String(), "سارا محمدی") {
 		t.Fatalf("operation update returned %d: %s", response.Code, response.Body.String())
 	}
-	if err := db.First(&order, order.ID).Error; err != nil || order.Status != "paid" || order.CustomerMobile != "09123456789" || order.ShipmentTrackingCode != "TRACK-123" || order.InstagramUsername != "sara.new" || order.InternalNote != "یادداشت داخلی جدید" {
+	if err := db.First(&order, order.ID).Error; err != nil || order.Status != "paid" || order.CustomerMobile != "09123456789" || order.ShipmentTrackingCode != "TRACK-123" || order.SalesChannel != "bale" || order.ConversationReference != "سارا در بله @sara.new" || order.InternalNote != "یادداشت داخلی جدید" {
 		t.Fatalf("unexpected updated order: %#v, error %v", order, err)
 	}
 	var latest OrderStatusHistory
@@ -477,7 +482,7 @@ func TestOrderOperations(t *testing.T) {
 	if len(publicStatus.History) != 3 || publicStatus.History[2].Status != "paid" || publicStatus.CustomerSummary.Mobile != "0912•••6789" || publicStatus.CustomerSummary.PostalCodeSuffix != "7890" || publicStatus.CustomerSummary.AddressPreview == "نشانی اصلاح‌شده" {
 		t.Fatalf("unexpected public status summary: %#v", publicStatus)
 	}
-	if body := public.Body.String(); strings.Contains(body, `"customerAddress"`) || strings.Contains(body, `"internalNote"`) || strings.Contains(body, `"instagramUsername"`) || strings.Contains(body, `"changedByAdmin`) || strings.Contains(body, admin.Name) || strings.Contains(body, "نشانی اصلاح‌شده") {
+	if body := public.Body.String(); strings.Contains(body, `"customerAddress"`) || strings.Contains(body, `"internalNote"`) || strings.Contains(body, `"instagramUsername"`) || strings.Contains(body, `"salesChannel"`) || strings.Contains(body, `"conversationReference"`) || strings.Contains(body, `"changedByAdmin`) || strings.Contains(body, admin.Name) || strings.Contains(body, "نشانی اصلاح‌شده") || strings.Contains(body, "سارا در بله") {
 		t.Fatalf("public status exposed private data: %s", body)
 	}
 }
@@ -495,8 +500,8 @@ func TestOrderListViewsAndSorting(t *testing.T) {
 		{CreateKey: "sort-overdue", CreateFingerprint: "sort-overdue", SecretToken: "sort-overdue", ShopID: shop.ID, Amount: 100, EstimatedDeliveryDate: today.AddDate(0, 0, -1).Format("2006-01-02"), Status: "preparing", CreatedAt: now.Add(-4 * time.Hour), UpdatedAt: now.Add(-3 * time.Hour)},
 		{CreateKey: "sort-soon", CreateFingerprint: "sort-soon", SecretToken: "sort-soon", ShopID: shop.ID, Amount: 500, EstimatedDeliveryDate: today.AddDate(0, 0, 2).Format("2006-01-02"), Status: "paid", CreatedAt: now.Add(-3 * time.Hour), UpdatedAt: now.Add(-4 * time.Hour)},
 		{CreateKey: "sort-later", CreateFingerprint: "sort-later", SecretToken: "sort-later", ShopID: shop.ID, Amount: 900, EstimatedDeliveryDate: today.AddDate(0, 0, 8).Format("2006-01-02"), Status: waitingInfoStatus, CreatedAt: now.Add(-2 * time.Hour), UpdatedAt: now.Add(-2 * time.Hour)},
-		{CreateKey: "sort-shipped", CreateFingerprint: "sort-shipped", SecretToken: "sort-shipped", ShopID: shop.ID, Amount: 700, EstimatedDeliveryDate: today.Format("2006-01-02"), InstagramUsername: "archived-search", Status: "shipped", CreatedAt: now.Add(-time.Hour), UpdatedAt: now.Add(-30 * time.Minute)},
-		{CreateKey: "sort-cancelled", CreateFingerprint: "sort-cancelled", SecretToken: "sort-cancelled", ShopID: shop.ID, Amount: 300, EstimatedDeliveryDate: today.Format("2006-01-02"), InstagramUsername: "archived-search", Status: "cancelled", CreatedAt: now.Add(-30 * time.Minute), UpdatedAt: now.Add(-90 * time.Minute)},
+		{CreateKey: "sort-shipped", CreateFingerprint: "sort-shipped", SecretToken: "sort-shipped", ShopID: shop.ID, Amount: 700, EstimatedDeliveryDate: today.Format("2006-01-02"), ConversationReference: "archived-search", Status: "shipped", CreatedAt: now.Add(-time.Hour), UpdatedAt: now.Add(-30 * time.Minute)},
+		{CreateKey: "sort-cancelled", CreateFingerprint: "sort-cancelled", SecretToken: "sort-cancelled", ShopID: shop.ID, Amount: 300, EstimatedDeliveryDate: today.Format("2006-01-02"), ConversationReference: "archived-search", Status: "cancelled", CreatedAt: now.Add(-30 * time.Minute), UpdatedAt: now.Add(-90 * time.Minute)},
 	}
 	if err := db.Create(&orders).Error; err != nil {
 		t.Fatal(err)

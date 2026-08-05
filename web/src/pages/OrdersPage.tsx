@@ -141,7 +141,7 @@ export default function OrdersPage({ shop }: { shop: Shop }) {
           role="searchbox"
           value={search}
           onChange={(event) => setFilter("q", event.target.value)}
-          placeholder="نام، موبایل، کد سفارش یا اینستاگرام"
+          placeholder="نام، موبایل، کد سفارش یا مرجع گفتگو"
           aria-label="جستجوی سفارش"
         />
         {search && (

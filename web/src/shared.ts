@@ -17,6 +17,16 @@ export type PaymentCard = {
   active: boolean;
 };
 
+export const salesChannels = ["instagram", "whatsapp", "telegram", "bale", "other"] as const;
+export type SalesChannel = (typeof salesChannels)[number];
+export const salesChannelLabels: Record<SalesChannel, string> = {
+  instagram: "اینستاگرام",
+  whatsapp: "واتساپ",
+  telegram: "تلگرام",
+  bale: "بله",
+  other: "سایر",
+};
+
 export type Me = {
   admin: { id: number; name: string; login: string };
   shops: Shop[];
@@ -110,7 +120,8 @@ export type AdminOrder = {
   finalPaymentAmount?: number;
   status: string;
   estimatedDeliveryDate: string;
-  instagramUsername: string;
+  salesChannel: SalesChannel;
+  conversationReference: string;
   internalNote: string;
   customerFullName: string;
   customerMobile: string;
@@ -214,6 +225,19 @@ export function readCustomerDraft(token: string): CustomerDraft {
   } catch {
     return emptyCustomerDraft;
   }
+}
+
+export function readLastSalesChannel(): SalesChannel {
+  try {
+    const value = localStorage.getItem("radif_sales_channel");
+    return salesChannels.includes(value as SalesChannel) ? value as SalesChannel : "instagram";
+  } catch {
+    return "instagram";
+  }
+}
+
+export function rememberSalesChannel(value: SalesChannel) {
+  try { localStorage.setItem("radif_sales_channel", value); } catch { /* Storage may be unavailable in embedded browsers. */ }
 }
 
 export function persianNumber(value: number | string) {

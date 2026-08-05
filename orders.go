@@ -30,6 +30,10 @@ var validOrderStatuses = map[string]bool{
 	"preparing": true, "shipped": true, "cancelled": true,
 }
 
+var validSalesChannels = map[string]bool{
+	"instagram": true, "whatsapp": true, "telegram": true, "bale": true, "other": true,
+}
+
 var errOrderAlreadyCreated = errors.New("order already created")
 var iranTime = time.FixedZone("Iran", 3*60*60+30*60)
 
@@ -54,6 +58,8 @@ func createOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 			Amount                int64  `json:"amount"`
 			InitialPaymentAmount  *int64 `json:"initialPaymentAmount"`
 			EstimatedDeliveryDate string `json:"estimatedDeliveryDate"`
+			SalesChannel          string `json:"salesChannel"`
+			ConversationReference string `json:"conversationReference"`
 			InstagramUsername     string `json:"instagramUsername"`
 			InternalNote          string `json:"internalNote"`
 			ElapsedMS             int64  `json:"elapsedMs"`
@@ -69,7 +75,14 @@ func createOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 		}
 		input.CreateKey = strings.TrimSpace(input.CreateKey)
 		input.EstimatedDeliveryDate = strings.TrimSpace(input.EstimatedDeliveryDate)
-		input.InstagramUsername = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(input.InstagramUsername), "@"))
+		input.SalesChannel = strings.TrimSpace(input.SalesChannel)
+		input.ConversationReference = strings.TrimSpace(input.ConversationReference)
+		if input.ConversationReference == "" && strings.TrimSpace(input.InstagramUsername) != "" {
+			input.ConversationReference = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(input.InstagramUsername), "@"))
+		}
+		if input.SalesChannel == "" {
+			input.SalesChannel = "instagram"
+		}
 		input.InternalNote = strings.TrimSpace(input.InternalNote)
 		if input.CreateKey == "" || len(input.CreateKey) > 100 || input.ShopID == 0 || len(input.Items) == 0 || len(input.Items) > 50 || input.Amount <= 0 {
 			return echo.NewHTTPError(http.StatusBadRequest, "محصول و مبلغ سفارش الزامی است.")
@@ -79,6 +92,9 @@ func createOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 		}
 		if !validDeliveryDate(input.EstimatedDeliveryDate) {
 			return echo.NewHTTPError(http.StatusBadRequest, "تاریخ تحویل باید امروز یا بعد از آن باشد.")
+		}
+		if !validSalesChannels[input.SalesChannel] {
+			return echo.NewHTTPError(http.StatusBadRequest, "کانال فروش معتبر نیست.")
 		}
 		sort.Slice(input.Items, func(i, j int) bool { return input.Items[i].ProductID < input.Items[j].ProductID })
 		productIDs := make([]uint, len(input.Items))
@@ -90,7 +106,7 @@ func createOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 			productIDs[i] = item.ProductID
 			inputQuantities[item.ProductID] = item.Quantity
 		}
-		if len([]rune(input.InstagramUsername)) > 100 || len([]rune(input.InternalNote)) > 1000 {
+		if len([]rune(input.ConversationReference)) > 100 || len([]rune(input.InternalNote)) > 1000 {
 			return echo.NewHTTPError(http.StatusBadRequest, "متن واردشده بیش از حد طولانی است.")
 		}
 		if input.ElapsedMS < 0 {
@@ -102,7 +118,10 @@ func createOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 		fingerprintInput := map[string]any{
 			"shopId": input.ShopID, "items": input.Items, "amount": input.Amount,
 			"estimatedDeliveryDate": input.EstimatedDeliveryDate,
-			"instagramUsername":     input.InstagramUsername, "internalNote": input.InternalNote,
+			"instagramUsername":     input.ConversationReference, "internalNote": input.InternalNote,
+		}
+		if input.SalesChannel != "instagram" {
+			fingerprintInput["salesChannel"] = input.SalesChannel
 		}
 		if input.InitialPaymentAmount != nil {
 			fingerprintInput["initialPaymentAmount"] = *input.InitialPaymentAmount
@@ -138,7 +157,8 @@ func createOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 			Amount:                input.Amount,
 			InitialPaymentAmount:  input.InitialPaymentAmount,
 			EstimatedDeliveryDate: input.EstimatedDeliveryDate,
-			InstagramUsername:     input.InstagramUsername,
+			SalesChannel:          input.SalesChannel,
+			ConversationReference: input.ConversationReference,
 			InternalNote:          input.InternalNote,
 			Status:                waitingInfoStatus,
 		}
@@ -266,6 +286,8 @@ func updateOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 			CustomerPostalCode    *string `json:"customerPostalCode"`
 			CustomerNote          *string `json:"customerNote"`
 			ShipmentTrackingCode  *string `json:"shipmentTrackingCode"`
+			SalesChannel          *string `json:"salesChannel"`
+			ConversationReference *string `json:"conversationReference"`
 			InstagramUsername     *string `json:"instagramUsername"`
 			InternalNote          *string `json:"internalNote"`
 		}
@@ -278,7 +300,7 @@ func updateOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 		if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 			return echo.NewHTTPError(http.StatusBadRequest, "اطلاعات سفارش معتبر نیست.")
 		}
-		if input.EstimatedDeliveryDate == nil && input.Status == nil && input.CustomerFullName == nil && input.CustomerMobile == nil && input.CustomerAddress == nil && input.CustomerPostalCode == nil && input.CustomerNote == nil && input.ShipmentTrackingCode == nil && input.InstagramUsername == nil && input.InternalNote == nil {
+		if input.EstimatedDeliveryDate == nil && input.Status == nil && input.CustomerFullName == nil && input.CustomerMobile == nil && input.CustomerAddress == nil && input.CustomerPostalCode == nil && input.CustomerNote == nil && input.ShipmentTrackingCode == nil && input.SalesChannel == nil && input.ConversationReference == nil && input.InstagramUsername == nil && input.InternalNote == nil {
 			return echo.NewHTTPError(http.StatusBadRequest, "تغییری برای ذخیره ارسال نشده است.")
 		}
 		if input.EstimatedDeliveryDate != nil {
@@ -302,12 +324,23 @@ func updateOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 			}
 			input.ShipmentTrackingCode = &value
 		}
-		if input.InstagramUsername != nil {
-			value := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(*input.InstagramUsername), "@"))
-			if len([]rune(value)) > 100 {
-				return echo.NewHTTPError(http.StatusBadRequest, "نام کاربری اینستاگرام بیش از حد طولانی است.")
+		if input.SalesChannel != nil {
+			value := strings.TrimSpace(*input.SalesChannel)
+			if !validSalesChannels[value] {
+				return echo.NewHTTPError(http.StatusBadRequest, "کانال فروش معتبر نیست.")
 			}
-			input.InstagramUsername = &value
+			input.SalesChannel = &value
+		}
+		if input.ConversationReference == nil && input.InstagramUsername != nil {
+			value := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(*input.InstagramUsername), "@"))
+			input.ConversationReference = &value
+		}
+		if input.ConversationReference != nil {
+			value := strings.TrimSpace(*input.ConversationReference)
+			if len([]rune(value)) > 100 {
+				return echo.NewHTTPError(http.StatusBadRequest, "مرجع گفتگو بیش از حد طولانی است.")
+			}
+			input.ConversationReference = &value
 		}
 		if input.InternalNote != nil {
 			value := strings.TrimSpace(*input.InternalNote)
@@ -333,8 +366,11 @@ func updateOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 			if input.ShipmentTrackingCode != nil {
 				updates["shipment_tracking_code"] = *input.ShipmentTrackingCode
 			}
-			if input.InstagramUsername != nil {
-				updates["instagram_username"] = *input.InstagramUsername
+			if input.SalesChannel != nil {
+				updates["sales_channel"] = *input.SalesChannel
+			}
+			if input.ConversationReference != nil {
+				updates["conversation_reference"] = *input.ConversationReference
 			}
 			if input.InternalNote != nil {
 				updates["internal_note"] = *input.InternalNote
@@ -476,7 +512,7 @@ func listOrders(db *gorm.DB) echo.HandlerFunc {
 			escaped := strings.NewReplacer("\\", "\\\\", "%", "\\%", "_", "\\_").Replace(search)
 			like := "%" + escaped + "%"
 			mobile := normalizeIranianMobile(search)
-			conditions := "customer_full_name ILIKE ? ESCAPE '\\' OR instagram_username ILIKE ? ESCAPE '\\'"
+			conditions := "customer_full_name ILIKE ? ESCAPE '\\' OR conversation_reference ILIKE ? ESCAPE '\\'"
 			args := []any{like, like}
 			if mobile != "" {
 				conditions += " OR customer_mobile LIKE ?"
@@ -602,7 +638,7 @@ func adminOrderResponse(c echo.Context, cfg config, order Order) error {
 		"id": order.ID, "orderCode": fmt.Sprintf("#%d", order.ID),
 		"shop": map[string]any{"id": order.Shop.ID, "name": order.Shop.Name}, "items": items,
 		"amount": order.Amount, "status": order.Status, "estimatedDeliveryDate": order.EstimatedDeliveryDate,
-		"instagramUsername": order.InstagramUsername, "internalNote": order.InternalNote,
+		"salesChannel": order.SalesChannel, "conversationReference": order.ConversationReference, "internalNote": order.InternalNote,
 		"customerFullName": order.CustomerFullName, "customerMobile": order.CustomerMobile,
 		"customerAddress": order.CustomerAddress, "customerPostalCode": order.CustomerPostalCode,
 		"customerNote": order.CustomerNote, "customerSubmitted": order.CustomerSubmittedAt != nil,

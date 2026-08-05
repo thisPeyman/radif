@@ -61,7 +61,7 @@ func TestImportHistoricalOrder(t *testing.T) {
 		"amount": 650000, "estimatedDeliveryDate": "2020-01-02", "status": "preparing",
 		"customerFullName": " سارا احمدی ", "customerMobile": "+۹۸ ۹۱۲ ۳۴۵ ۶۷۸۹",
 		"customerAddress": " تهران، خیابان آزمایش ", "customerPostalCode": "۱۲۳۴۵۶۷۸۹۰",
-		"instagramUsername": " @sara.old ", "internalNote": " سفارش قدیمی ",
+		"salesChannel": "telegram", "conversationReference": " سارا در تلگرام ", "internalNote": " سفارش قدیمی ",
 	}
 	response := historicalOrderRequest(t, e, cookie, input, nil)
 	if response.Code != http.StatusCreated {
@@ -78,7 +78,7 @@ func TestImportHistoricalOrder(t *testing.T) {
 	if err := db.First(&order, output.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if order.Status != "preparing" || order.EstimatedDeliveryDate != "2020-01-02" || order.Amount != 650000 || order.CustomerSubmittedAt == nil || order.CustomerMobile != "09123456789" || order.CustomerPostalCode != "1234567890" || order.ReceiptFilePath != "" || order.InstagramUsername != "sara.old" || order.PaymentCardNumber != "6037991812345678" || order.PaymentInstructions != "به نام فروشگاه خانه آبی" {
+	if order.Status != "preparing" || order.EstimatedDeliveryDate != "2020-01-02" || order.Amount != 650000 || order.CustomerSubmittedAt == nil || order.CustomerMobile != "09123456789" || order.CustomerPostalCode != "1234567890" || order.ReceiptFilePath != "" || order.SalesChannel != "telegram" || order.ConversationReference != "سارا در تلگرام" || order.PaymentCardNumber != "6037991812345678" || order.PaymentInstructions != "به نام فروشگاه خانه آبی" {
 		t.Fatalf("unexpected imported order: %#v", order)
 	}
 	var item OrderItem
@@ -96,6 +96,9 @@ func TestImportHistoricalOrder(t *testing.T) {
 	public := request(e, http.MethodGet, "/api"+parsed.Path, "", "", nil)
 	if public.Code != http.StatusOK || !strings.Contains(public.Body.String(), `"customerSubmitted":true`) || !strings.Contains(public.Body.String(), `"receiptUploaded":false`) || !strings.Contains(public.Body.String(), `"status":"preparing"`) {
 		t.Fatalf("public imported order returned %d: %s", public.Code, public.Body.String())
+	}
+	if body := public.Body.String(); strings.Contains(body, "salesChannel") || strings.Contains(body, "conversationReference") || strings.Contains(body, "سارا در تلگرام") {
+		t.Fatalf("public imported order exposed conversation data: %s", body)
 	}
 
 	retry := historicalOrderRequest(t, e, cookie, input, nil)
@@ -149,6 +152,11 @@ func TestImportHistoricalOrderValidationAndOwnership(t *testing.T) {
 	if response := historicalOrderRequest(t, e, cookie, input, nil); response.Code != http.StatusBadRequest {
 		t.Fatalf("receipt-less waiting-payment import returned %d: %s", response.Code, response.Body.String())
 	}
+	input["createKey"], input["status"], input["salesChannel"] = "historical-invalid-channel", "preparing", "sms"
+	if response := historicalOrderRequest(t, e, cookie, input, nil); response.Code != http.StatusBadRequest {
+		t.Fatalf("invalid-channel import returned %d: %s", response.Code, response.Body.String())
+	}
+	delete(input, "salesChannel")
 	other := createOtherOrder(t, db)
 	var otherProduct Product
 	if err := db.First(&otherProduct, "shop_id = ?", other.ShopID).Error; err != nil {

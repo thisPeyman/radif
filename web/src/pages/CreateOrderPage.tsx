@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { NavLink } from "react-router";
 import { ErrorNotice, ProductChoices, type SelectedOrderItem } from "../components";
 import DeliveryDateSelect from "../DeliveryDateSelect";
-import { api, defaultShareMessageTemplate, normalizeDigits, persianDate, persianDigits, persianNumber, randomID, todayISO, type CreatedOrder, type Product, type Shop } from "../shared";
+import { api, defaultShareMessageTemplate, normalizeDigits, persianDate, persianDigits, persianNumber, randomID, readLastSalesChannel, rememberSalesChannel, salesChannelLabels, salesChannels, todayISO, type CreatedOrder, type Product, type SalesChannel, type Shop } from "../shared";
 
 function newCreateKey(shopID: number) {
   const storageKey = `radif_create_key_${shopID}`;
@@ -29,7 +29,8 @@ export default function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; on
   const [initialPaymentAmount, setInitialPaymentAmount] = useState("");
   const [initialPaymentFocused, setInitialPaymentFocused] = useState(false);
   const [deliveryDate, setDeliveryDate] = useState("");
-  const [instagram, setInstagram] = useState("");
+  const [salesChannel, setSalesChannel] = useState<SalesChannel>(readLastSalesChannel);
+  const [conversationReference, setConversationReference] = useState("");
   const [note, setNote] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
@@ -154,12 +155,14 @@ export default function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; on
           amount: numericAmount,
           ...(splitPayment ? { initialPaymentAmount: numericInitialPayment } : {}),
           estimatedDeliveryDate: deliveryDate,
-          instagramUsername: instagram,
+          salesChannel,
+          conversationReference,
           internalNote: note,
           elapsedMs: Math.round(performance.now() - startedAt.current),
         }),
       });
       sessionStorage.removeItem(`radif_create_key_${shop.id}`);
+      rememberSalesChannel(salesChannel);
       setCreated(order);
       if (reservedCopy && resolveReserved) {
         resolveReserved(new Blob([shareMessage(order)], { type: "text/plain" }));
@@ -202,7 +205,7 @@ export default function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; on
     setSplitPayment(false);
     setInitialPaymentAmount("");
     setDeliveryDate("");
-    setInstagram("");
+    setConversationReference("");
     setNote("");
     setCreated(null);
     setError("");
@@ -222,7 +225,7 @@ export default function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; on
       <span className="grid size-16 place-items-center rounded-3xl bg-teal text-white"><ClipboardCheck className="size-8" strokeWidth={1.8} aria-hidden="true" /></span>
       <p className="page-kicker mt-6">{created.orderCode.replace(/\d/g, (digit) => persianDigits[Number(digit)])}</p><h1 className="page-title mt-1">سفارش ساخته شد</h1>
       <p className="mt-3 leading-7 text-ink/70">
-        {copyState === "copied" && "متن کپی شد و آماده فرستادن در دایرکت است."}
+        {copyState === "copied" && "متن کپی شد و آماده فرستادن در گفتگو است."}
         {copyState === "copying" && "در حال کپی‌کردن متن…"}
         {copyState === "failed" && "کپی خودکار در این مرورگر انجام نشد. لینک را از کادر زیر کپی کنید."}
       </p>
@@ -399,6 +402,15 @@ export default function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; on
             <span id="delivery-date-preview" className="mt-2 block text-sm text-ink/70">{deliveryDate ? `تحویل: ${persianDate(deliveryDate)}` : "تاریخ وعده‌داده‌شده به مشتری را انتخاب کنید."}</span>
             {deliveryDateError && <span id="delivery-date-error" className="mt-2 block text-sm font-bold text-error" role="alert">{deliveryDateError}</span>}
           </div>
+          <label className="mt-5 block" htmlFor="sales-channel">
+            <span className="mb-2 block text-sm font-black">کانال فروش</span>
+            <span className="relative block">
+              <select id="sales-channel" className="field appearance-none pl-12" value={salesChannel} onChange={(event) => setSalesChannel(event.target.value as SalesChannel)} required>
+                {salesChannels.map((channel) => <option key={channel} value={channel}>{salesChannelLabels[channel]}</option>)}
+              </select>
+              <ChevronDown className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-ink/60" aria-hidden="true" />
+            </span>
+          </label>
           <details className="mt-5 rounded-3xl border border-ledger bg-white">
             <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between px-4 font-bold">
               <span>جزئیات اختیاری</span>
@@ -406,19 +418,16 @@ export default function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; on
             </summary>
             <div className="space-y-5 border-t border-ledger p-4">
               <label className="block">
-                <span className="mb-2 block text-sm font-bold">نام کاربری اینستاگرام</span>
-                <span className="relative block">
-                  <input
-                    className="field pl-8! text-left"
-                    dir="ltr"
-                    autoComplete="off"
-                    maxLength={101}
-                    value={instagram}
-                    onChange={(event) => setInstagram(event.target.value)}
-                    placeholder="username"
-                  />
-                  <span className="pointer-events-none absolute inset-y-0 left-4 flex items-center text-ink/70">@</span>
-                </span>
+                <span className="mb-2 block text-sm font-bold">مرجع گفتگو</span>
+                <input
+                  className="field"
+                  dir="auto"
+                  autoComplete="off"
+                  maxLength={100}
+                  value={conversationReference}
+                  onChange={(event) => setConversationReference(event.target.value)}
+                  placeholder="نام کاربری، موبایل، نام نمایشی یا هر نشانه دیگر"
+                />
               </label>
               <label className="block">
                 <span className="mb-2 block text-sm font-bold">یادداشت داخلی</span>
@@ -427,7 +436,7 @@ export default function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; on
                   maxLength={1000}
                   value={note}
                   onChange={(event) => setNote(event.target.value)}
-                  placeholder="مثلاً رنگ یا هماهنگی انجام‌شده در دایرکت"
+                  placeholder="مثلاً رنگ یا هماهنگی انجام‌شده در گفتگو"
                 />
                 <span className="mt-1 block text-xs text-ink/70">این یادداشت به مشتری نشان داده نمی‌شود.</span>
               </label>

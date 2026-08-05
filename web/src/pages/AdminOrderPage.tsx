@@ -13,9 +13,12 @@ import {
   persianDateTime,
   persianDigits,
   persianNumber,
+  salesChannelLabels,
+  salesChannels,
   statusStyles,
   type AdminOrder,
   type CustomerDraft,
+  type SalesChannel,
 } from "../shared";
 
 export default function AdminOrderPage() {
@@ -26,7 +29,8 @@ export default function AdminOrderPage() {
   const [status, setStatus] = useState("");
   const [tracking, setTracking] = useState("");
   const [customer, setCustomer] = useState<CustomerDraft>(emptyCustomerDraft);
-  const [instagramUsername, setInstagramUsername] = useState("");
+  const [salesChannel, setSalesChannel] = useState<SalesChannel>("instagram");
+  const [conversationReference, setConversationReference] = useState("");
   const [internalNote, setInternalNote] = useState("");
   const [editingCustomer, setEditingCustomer] = useState(false);
   const [editingInternal, setEditingInternal] = useState(false);
@@ -50,7 +54,8 @@ export default function AdminOrderPage() {
         setStatus(response.status);
         setTracking(response.shipmentTrackingCode);
         setCustomer({ fullName: response.customerFullName, mobile: response.customerMobile, address: response.customerAddress, postalCode: response.customerPostalCode, note: response.customerNote });
-        setInstagramUsername(response.instagramUsername);
+        setSalesChannel(response.salesChannel);
+        setConversationReference(response.conversationReference);
         setInternalNote(response.internalNote);
       })
       .catch((reason) => { if (!(reason instanceof DOMException && reason.name === "AbortError")) setError(reason instanceof Error ? reason.message : "سفارش دریافت نشد."); })
@@ -71,7 +76,8 @@ export default function AdminOrderPage() {
       setStatus(response.status);
       setTracking(response.shipmentTrackingCode);
       setCustomer({ fullName: response.customerFullName, mobile: response.customerMobile, address: response.customerAddress, postalCode: response.customerPostalCode, note: response.customerNote });
-      setInstagramUsername(response.instagramUsername);
+      setSalesChannel(response.salesChannel);
+      setConversationReference(response.conversationReference);
       setInternalNote(response.internalNote);
       if (section === "customer") setEditingCustomer(false);
       if (section === "internal") setEditingInternal(false);
@@ -95,7 +101,8 @@ export default function AdminOrderPage() {
     setEditingCustomer(false);
   }
   function cancelInternalEdit() {
-    setInstagramUsername(order?.instagramUsername ?? "");
+    setSalesChannel(order?.salesChannel ?? "instagram");
+    setConversationReference(order?.conversationReference ?? "");
     setInternalNote(order?.internalNote ?? "");
     setEditingInternal(false);
   }
@@ -360,8 +367,12 @@ export default function AdminOrderPage() {
         {!editingInternal && (
           <>
             <div className="mt-3 text-sm">
-              <p className="text-xs font-bold text-ink/60">اینستاگرام</p>
-              <p className="mt-1 font-bold" dir="ltr">{order.instagramUsername ? `@${order.instagramUsername}` : "ثبت نشده"}</p>
+              <p className="text-xs font-bold text-ink/60">کانال فروش</p>
+              <p className="mt-1 font-bold">{salesChannelLabels[order.salesChannel]}</p>
+            </div>
+            <div className="mt-4 text-sm">
+              <p className="text-xs font-bold text-ink/60">مرجع گفتگو</p>
+              <p className="mt-1 font-bold" dir="auto">{order.conversationReference || "ثبت نشده"}</p>
             </div>
             <div className="mt-4">
               <p className="text-xs font-bold text-ink/60">یادداشت داخلی</p>
@@ -370,10 +381,16 @@ export default function AdminOrderPage() {
           </>
         )}
         {editingInternal && (
-          <form className="mt-3 space-y-3" onSubmit={(event) => { event.preventDefault(); void saveChanges("internal", { instagramUsername, internalNote }); }}>
+          <form className="mt-3 space-y-3" onSubmit={(event) => { event.preventDefault(); void saveChanges("internal", { salesChannel, conversationReference, internalNote }); }}>
             <label className="block">
-              <span className="mb-2 block text-sm font-bold">اینستاگرام مشتری</span>
-              <input className="field" dir="ltr" maxLength={101} value={instagramUsername} onChange={(event) => setInstagramUsername(event.target.value)} placeholder="username" />
+              <span className="mb-2 block text-sm font-bold">کانال فروش</span>
+              <select className="field" value={salesChannel} onChange={(event) => setSalesChannel(event.target.value as SalesChannel)} required>
+                {salesChannels.map((channel) => <option key={channel} value={channel}>{salesChannelLabels[channel]}</option>)}
+              </select>
+            </label>
+            <label className="block">
+              <span className="mb-2 block text-sm font-bold">مرجع گفتگو</span>
+              <input className="field" dir="auto" maxLength={100} value={conversationReference} onChange={(event) => setConversationReference(event.target.value)} placeholder="نام کاربری، موبایل، نام نمایشی یا هر نشانه دیگر" />
             </label>
             <label className="block">
               <span className="mb-2 block text-sm font-bold">یادداشت داخلی</span>

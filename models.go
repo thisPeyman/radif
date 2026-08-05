@@ -78,7 +78,8 @@ type Order struct {
 	Amount                         int64 `gorm:"not null"`
 	InitialPaymentAmount           *int64
 	EstimatedDeliveryDate          string `gorm:"not null"`
-	InstagramUsername              string
+	SalesChannel                   string `gorm:"not null;default:instagram"`
+	ConversationReference          string
 	InternalNote                   string
 	CustomerFullName               string
 	CustomerMobile                 string
