@@ -1,3 +1,5 @@
+import { format } from "date-fns-jalali";
+
 export type Shop = {
   id: number;
   name: string;
@@ -264,6 +266,53 @@ export function relativeAge(value: string) {
   const hours = Math.round(minutes / 60);
   if (Math.abs(hours) < 24) return relativeTimeFormat.format(hours, "hour");
   return relativeTimeFormat.format(Math.round(hours / 24), "day");
+}
+
+// ponytail: annual list; add each new Jalali year's official dates when published.
+const IRANIAN_HOLIDAYS = new Set([
+  "1405-01-01",
+  "1405-01-02",
+  "1405-01-03",
+  "1405-01-04",
+  "1405-01-12",
+  "1405-01-13",
+  "1405-01-25",
+  "1405-03-06",
+  "1405-03-14",
+  "1405-03-15",
+  "1405-04-03",
+  "1405-04-04",
+  "1405-05-13",
+  "1405-05-21",
+  "1405-05-22",
+  "1405-05-30",
+  "1405-06-08",
+  "1405-08-22",
+  "1405-10-02",
+  "1405-10-16",
+  "1405-11-04",
+  "1405-11-22",
+  "1405-12-09",
+  "1405-12-19",
+  "1405-12-20",
+  "1405-12-29",
+]);
+
+export function isWorkingDay(iso: string) {
+  const day = new Date(`${iso}T12:00:00Z`).getUTCDay();
+  if (day === 4 || day === 5) return false;
+  return !IRANIAN_HOLIDAYS.has(format(new Date(`${iso}T12:00:00Z`), "yyyy-MM-dd"));
+}
+
+export function addWorkingDays(iso: string, count: number) {
+  const date = new Date(`${iso}T12:00:00Z`);
+  let remaining = count;
+  while (remaining > 0) {
+    date.setUTCDate(date.getUTCDate() + 1);
+    const candidate = date.toISOString().slice(0, 10);
+    if (isWorkingDay(candidate)) remaining--;
+  }
+  return date.toISOString().slice(0, 10);
 }
 
 export function deliveryTiming(value: string) {

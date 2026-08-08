@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { NavLink } from "react-router";
 import { ErrorNotice, ProductChoices, type SelectedOrderItem } from "../components";
 import DeliveryDateSelect from "../DeliveryDateSelect";
-import { api, defaultShareMessageTemplate, normalizeDigits, persianDate, persianDigits, persianNumber, randomID, readLastSalesChannel, rememberSalesChannel, salesChannelLabels, salesChannels, todayISO, type CreatedOrder, type Product, type SalesChannel, type Shop } from "../shared";
+import { addWorkingDays, api, defaultShareMessageTemplate, normalizeDigits, persianDate, persianDigits, persianNumber, randomID, readLastSalesChannel, rememberSalesChannel, salesChannelLabels, salesChannels, todayISO, type CreatedOrder, type Product, type SalesChannel, type Shop } from "../shared";
 
 function newCreateKey(shopID: number) {
   const storageKey = `radif_create_key_${shopID}`;
@@ -29,6 +29,7 @@ export default function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; on
   const [initialPaymentAmount, setInitialPaymentAmount] = useState("");
   const [initialPaymentFocused, setInitialPaymentFocused] = useState(false);
   const [deliveryDate, setDeliveryDate] = useState("");
+  const [workDays, setWorkDays] = useState(0);
   const [salesChannel, setSalesChannel] = useState<SalesChannel>(readLastSalesChannel);
   const [conversationReference, setConversationReference] = useState("");
   const [note, setNote] = useState("");
@@ -46,6 +47,7 @@ export default function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; on
   const startedAt = useRef(performance.now());
   const [createKey, setCreateKey] = useState(() => newCreateKey(shop.id));
   const canShare = typeof navigator.share === "function";
+  const deliveryDateHelp = workDays > 0 ? `${persianNumber(workDays)} روز کاری از امروز` : deliveryDate ? "" : "تاریخ وعده‌داده‌شده به مشتری را انتخاب کنید.";
 
   useEffect(() => () => onBusyChange(false), [onBusyChange]);
   useEffect(() => {
@@ -205,6 +207,7 @@ export default function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; on
     setSplitPayment(false);
     setInitialPaymentAmount("");
     setDeliveryDate("");
+    setWorkDays(0);
     setConversationReference("");
     setNote("");
     setCreated(null);
@@ -392,14 +395,21 @@ export default function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; on
             <DeliveryDateSelect
               id="delivery-date"
               value={deliveryDate}
-              onChange={(value) => {
-                setDeliveryDate(value);
+              workDays={workDays}
+              onWorkDayPick={(count) => {
+                setWorkDays(count);
+                setDeliveryDate(addWorkingDays(todayISO(), count));
                 setDeliveryDateError("");
               }}
-              describedBy={deliveryDateError ? "delivery-date-preview delivery-date-error" : "delivery-date-preview"}
+              onChange={(value) => {
+                setDeliveryDate(value);
+                setWorkDays(0);
+                setDeliveryDateError("");
+              }}
+              describedBy={[deliveryDateHelp && "delivery-date-help", deliveryDateError && "delivery-date-error"].filter(Boolean).join(" ") || undefined}
               invalid={Boolean(deliveryDateError)}
             />
-            <span id="delivery-date-preview" className="mt-2 block text-sm text-ink/70">{deliveryDate ? `تحویل: ${persianDate(deliveryDate)}` : "تاریخ وعده‌داده‌شده به مشتری را انتخاب کنید."}</span>
+            {deliveryDateHelp && <span id="delivery-date-help" className="mt-2 block text-xs font-bold text-ink/55">{deliveryDateHelp}</span>}
             {deliveryDateError && <span id="delivery-date-error" className="mt-2 block text-sm font-bold text-error" role="alert">{deliveryDateError}</span>}
           </div>
           <label className="mt-5 block" htmlFor="sales-channel">
