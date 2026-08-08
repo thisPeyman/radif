@@ -162,6 +162,15 @@ func newServer(db *gorm.DB, cfg config) *echo.Echo {
 	e.POST("/api/o/:token/details", submitCustomerDetails(db, cfg), origin)
 	e.POST("/api/o/:token/final-payment/receipt", submitFinalReceipt(db, cfg), origin)
 
+	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			path := c.Request().URL.Path
+			if !strings.HasPrefix(path, "/api/") && (path == "/sw.js" || path == "/manifest.webmanifest" || strings.Contains(c.Request().Header.Get(echo.HeaderAccept), echo.MIMETextHTML)) {
+				c.Response().Header().Set(echo.HeaderCacheControl, "no-cache")
+			}
+			return next(c)
+		}
+	})
 	e.Use(middleware.StaticWithConfig(middleware.StaticConfig{
 		Skipper: func(c echo.Context) bool {
 			return strings.HasPrefix(c.Request().URL.Path, "/api/")
