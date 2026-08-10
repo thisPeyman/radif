@@ -1,5 +1,5 @@
 import { CalendarDays, Check, Clipboard, ClipboardCheck, ClipboardList, LoaderCircle, MessageCircle, Package, Store } from "lucide-react";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useParams } from "react-router";
 import { CopyButton, ErrorNotice, ReceiptPicker } from "../components";
 import {
@@ -10,8 +10,11 @@ import {
   persianDateTime,
   persianDigits,
   persianNumber,
+  pilotFailureReason,
   publicStatusLabels,
+  randomID,
   readCustomerDraft,
+  sendPilotEvent,
   type CustomerDraft,
   type PublicOrder,
 } from "../shared";
@@ -33,8 +36,10 @@ export default function PublicOrderPage() {
   const [finalPending, setFinalPending] = useState(false);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const [amountCopyState, setAmountCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const formStarted = useRef(false);
 
   useEffect(() => {
+    formStarted.current = false;
     const controller = new AbortController();
     setLoading(true);
     setError("");
@@ -55,6 +60,16 @@ export default function PublicOrderPage() {
     setFinalReceiptError("");
     setFinalError("");
   }, [token]);
+
+  function recordFormEvent(eventName: "customer_form_started" | "customer_submission_failed", reason?: string) {
+    sendPilotEvent(`/api/o/${encodeURIComponent(token)}/pilot-events`, { eventName, ...(reason ? { eventKey: randomID(), reason } : {}) });
+  }
+
+  function startForm() {
+    if (formStarted.current) return;
+    formStarted.current = true;
+    recordFormEvent("customer_form_started");
+  }
 
   useEffect(() => {
     if (!order || order.customerSubmitted) return;
@@ -87,6 +102,7 @@ export default function PublicOrderPage() {
 
   async function submitDetails(event: FormEvent) {
     event.preventDefault();
+    startForm();
     const normalizedMobile = normalizeIranianMobile(draft.mobile);
     const normalizedPostalCode = normalizeDigits(draft.postalCode);
     const errors: Partial<Record<keyof CustomerDraft, string>> = {};
@@ -97,6 +113,7 @@ export default function PublicOrderPage() {
     if (!receipt) setReceiptError("تصویر رسید پرداخت را انتخاب کنید.");
     if (Object.keys(errors).length || !receipt) {
       setFieldErrors(errors);
+      recordFormEvent("customer_submission_failed", "client_validation");
       return;
     }
     const form = new FormData();
@@ -118,6 +135,7 @@ export default function PublicOrderPage() {
       setOrder(updated);
       setReceipt(null);
     } catch (reason) {
+      recordFormEvent("customer_submission_failed", pilotFailureReason(reason));
       setError(reason instanceof Error ? reason.message : "اطلاعات ثبت نشد. دوباره تلاش کنید.");
     } finally {
       setPending(false);
@@ -351,7 +369,7 @@ export default function PublicOrderPage() {
           )}
 
           {order.customerSubmissionAllowed && (
-            <form className="mt-8 space-y-5" onSubmit={submitDetails} noValidate>
+            <form className="mt-8 space-y-5" onSubmit={submitDetails} onFocusCapture={startForm} noValidate>
               <div>
                 <h2 className="text-xl font-black">اطلاعات تحویل</h2>
                 <p className="mt-1 text-sm leading-7 text-ink/70">پس از ثبت، اطلاعات برای شما قفل می‌شود و فروشگاه سفارش را بررسی می‌کند.</p>

@@ -132,7 +132,12 @@ func login(db *gorm.DB, cfg config, limiter *loginLimiter) echo.HandlerFunc {
 		}
 		tokenHash := hashToken(token)
 		expiresAt := time.Now().Add(cfg.sessionLifetime)
-		if err := db.Create(&Session{TokenHash: tokenHash, AdminID: admin.ID, ExpiresAt: expiresAt}).Error; err != nil {
+		if err := db.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Create(&Session{TokenHash: tokenHash, AdminID: admin.ID, ExpiresAt: expiresAt}).Error; err != nil {
+				return err
+			}
+			return recordPilotEvent(tx, PilotEvent{EventName: "admin_login", AdminID: &admin.ID}, map[string]any{"userAgent": pilotUserAgent(c)})
+		}); err != nil {
 			return err
 		}
 

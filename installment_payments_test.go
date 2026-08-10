@@ -121,6 +121,12 @@ func TestInstallmentPaymentFlow(t *testing.T) {
 	if list.Code != http.StatusOK || !strings.Contains(list.Body.String(), `"initialPaymentAmount":350000`) || !strings.Contains(list.Body.String(), `"finalPaymentConfirmed":true`) {
 		t.Fatalf("split list state returned %d: %s", list.Code, list.Body.String())
 	}
+	for _, eventName := range []string{"final_payment_requested", "final_receipt_submitted", "final_payment_confirmed"} {
+		var count int64
+		if err := db.Model(&PilotEvent{}).Where("order_id = ? AND event_name = ?", order.ID, eventName).Count(&count).Error; err != nil || count != 1 {
+			t.Errorf("%s count = %d, error %v", eventName, count, err)
+		}
+	}
 }
 
 func TestInstallmentValidationAndOwnership(t *testing.T) {

@@ -139,6 +139,7 @@ func newServer(db *gorm.DB, cfg config) *echo.Echo {
 	e.GET("/api/shops/:shopID/products", products(db), requireAdmin(db, cfg), requireShopAccess(db))
 	e.GET("/api/shops/:shopID/report", shopReport(db), requireAdmin(db, cfg), requireShopAccess(db))
 	e.PATCH("/api/shops/:shopID/support", updateShopSupport(db), requireAdmin(db, cfg), requireShopAccess(db), origin)
+	e.POST("/api/shops/:shopID/pilot-events", recordAdminPilotEvent(db), requireAdmin(db, cfg), requireShopAccess(db), origin)
 	e.POST("/api/shops/:shopID/payment-cards", createPaymentCard(db), requireAdmin(db, cfg), requireShopAccess(db), origin)
 	e.PATCH("/api/shops/:shopID/payment-cards/:cardID", updatePaymentCard(db), requireAdmin(db, cfg), requireShopAccess(db), origin)
 	e.POST("/api/shops/:shopID/payment-cards/:cardID/activate", activatePaymentCard(db), requireAdmin(db, cfg), requireShopAccess(db), origin)
@@ -159,6 +160,7 @@ func newServer(db *gorm.DB, cfg config) *echo.Echo {
 	e.POST("/api/orders/:orderID/customer-link/rotate", rotateCustomerLink(db, cfg), requireAdmin(db, cfg), origin)
 	e.GET("/api/o/:token", publicOrder(db))
 	e.POST("/api/o/:token/support-click", recordPublicSupportClick(db), origin)
+	e.POST("/api/o/:token/pilot-events", recordPublicPilotEvent(db), origin)
 	e.POST("/api/o/:token/details", submitCustomerDetails(db, cfg), origin)
 	e.POST("/api/o/:token/final-payment/receipt", submitFinalReceipt(db, cfg), origin)
 

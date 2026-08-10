@@ -309,6 +309,15 @@ validated ideal workflow.
 | Persian-aware dates and digits | Native locale formatting is used, and common Persian/Arabic numeric input is normalized. | Reduces cognitive and input friction for Iranian users. |
 | Touch and keyboard basics | Large controls, semantic labels, visible focus, inline alerts, live states, and reduced-motion support are present. | Keeps the core journey usable across phones, keyboards, and assistive technology without a separate UI mode. |
 
+### 5.13 Pilot Measurement
+
+| Feature | Current behavior | Product reason |
+| --- | --- | --- |
+| Creation funnel | Records creation starts, failures, successful normal or historical creation, elapsed time, sales channel, and successful clipboard or native sharing. | Measures creation speed, abandonment, failure, and customer handoff without changing the order form. |
+| Customer funnel | Records public opens, form starts, failed submissions, successful submissions, later status views, and support clicks. Repeated views are deduplicated in 30-minute windows. | Locates customer drop-off and distinguishes self-service status use from requests for help. |
+| Operator and payment activity | Records successful login, deduplicated order-list and order-detail views, status changes, tracking additions, and final-payment request, receipt, and confirmation. | Measures active use and the operational path through fulfillment and split payments. |
+| Privacy and access | Events contain shop, order, or admin IDs when applicable plus allowlisted metadata such as elapsed time, status, source, failure category, and coarse browser category. Customer PII, tokens, URLs, IPs, raw user agents, receipt names, and tracking codes are excluded. Events are currently available only through direct database queries. | Produces pilot evidence without creating a second sensitive customer-data store or prematurely building analytics UI. |
+
 ## 6. Product Rules Future Work Must Preserve
 
 These rules protect the current product promise and should not be changed
@@ -469,7 +478,7 @@ product discussion should account for.
 
 | Gap or risk | Why it matters |
 | --- | --- |
-| Pilot measurement is incomplete | Successful normal creation records `order_create_started` retrospectively from client-reported elapsed time plus `order_created`; it does not observe abandoned or failed starts. Successful clipboard copies from the post-create screen record `order_link_copied`, while native-share success, historical imports, and later order-detail copies do not. Public support clicks record channel and action type, but link opens, form completion, status views, status changes, and CSV export remain absent. |
+| Pilot measurement still needs external context | The core creation, handoff, customer, status, operator, and split-payment funnels are recorded in `pilot_events`, but analysis currently requires direct SQL. Confirmed sales omitted from Radif, prevented mistakes, follow-up DM counts, and willingness to pay still require weekly shop numbers and interviews. |
 | Shop onboarding is manual | Every new pilot shop still needs technical database/operator work before it can use the product, although the deployment runbook now contains current provisioning SQL. |
 | Customer links live indefinitely | Links do not expire or support disable-only revocation; a leaked link remains usable until an operator rotates it. |
 | Customer data has indefinite retention | Addresses, mobile numbers, and receipts accumulate without deletion controls or a documented product retention policy. |

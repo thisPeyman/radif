@@ -102,12 +102,13 @@ export function ProductChoices({ products, items, onChange }: {
   );
 }
 
-export function CopyButton({ value, label }: { value: string; label: string }) {
+export function CopyButton({ value, label, onCopied }: { value: string; label: string; onCopied?: () => void }) {
   const [copied, setCopied] = useState(false);
   async function copy() {
     try {
       await navigator.clipboard.writeText(value);
       setCopied(true);
+      onCopied?.();
       window.setTimeout(() => setCopied(false), 1500);
     } catch {
       setCopied(false);

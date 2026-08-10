@@ -190,6 +190,12 @@ func submitCustomerDetails(db *gorm.DB, cfg config) echo.HandlerFunc {
 			if err := tx.Create(&OrderStatusHistory{OrderID: order.ID, PreviousStatus: previousStatus, NewStatus: waitingPaymentStatus}).Error; err != nil {
 				return err
 			}
+			if err := recordPilotEvent(tx, PilotEvent{EventName: "customer_submitted", OrderID: &order.ID, ShopID: &order.ShopID}, map[string]any{"userAgent": pilotUserAgent(c)}); err != nil {
+				return err
+			}
+			if err := recordPilotEvent(tx, PilotEvent{EventName: "order_status_changed", OrderID: &order.ID, ShopID: &order.ShopID}, map[string]any{"previousStatus": previousStatus, "newStatus": waitingPaymentStatus, "source": "customer"}); err != nil {
+				return err
+			}
 			return tx.Preload("Shop").Preload("Items.Product").Preload("History", func(query *gorm.DB) *gorm.DB { return query.Order("created_at, id") }).First(&updated, order.ID).Error
 		})
 		if err != nil {

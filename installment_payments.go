@@ -52,11 +52,14 @@ func requestFinalPayment(db *gorm.DB, cfg config) echo.HandlerFunc {
 				return err
 			}
 			now := time.Now()
-			return tx.Model(&order).Updates(map[string]any{
+			if err := tx.Model(&order).Updates(map[string]any{
 				"final_payment_requested_at": now,
 				"final_payment_card_number":  shop.PaymentCardNumber,
 				"final_payment_instructions": shop.PaymentInstructions,
-			}).Error
+			}).Error; err != nil {
+				return err
+			}
+			return recordPilotEvent(tx, PilotEvent{EventName: "final_payment_requested", OrderID: &order.ID, AdminID: &admin.ID, ShopID: &order.ShopID}, nil)
 		})
 		if err != nil {
 			return err
@@ -120,6 +123,9 @@ func submitFinalReceipt(db *gorm.DB, cfg config) echo.HandlerFunc {
 			if err := tx.Model(&locked).Update("final_receipt_file_path", receipt.storedName).Error; err != nil {
 				return err
 			}
+			if err := recordPilotEvent(tx, PilotEvent{EventName: "final_receipt_submitted", OrderID: &locked.ID, ShopID: &locked.ShopID}, map[string]any{"userAgent": pilotUserAgent(c)}); err != nil {
+				return err
+			}
 			return tx.Preload("Shop").Preload("Items.Product").Preload("History", func(query *gorm.DB) *gorm.DB { return query.Order("created_at, id") }).First(&updated, order.ID).Error
 		})
 		if err != nil {
@@ -153,10 +159,13 @@ func confirmFinalPayment(db *gorm.DB, cfg config) echo.HandlerFunc {
 				return echo.NewHTTPError(http.StatusConflict, "رسید پرداخت نهایی هنوز آماده تأیید نیست.")
 			}
 			now := time.Now()
-			return tx.Model(&order).Updates(map[string]any{
+			if err := tx.Model(&order).Updates(map[string]any{
 				"final_payment_confirmed_at":          now,
 				"final_payment_confirmed_by_admin_id": admin.ID,
-			}).Error
+			}).Error; err != nil {
+				return err
+			}
+			return recordPilotEvent(tx, PilotEvent{EventName: "final_payment_confirmed", OrderID: &order.ID, AdminID: &admin.ID, ShopID: &order.ShopID}, nil)
 		})
 		if err != nil {
 			return err

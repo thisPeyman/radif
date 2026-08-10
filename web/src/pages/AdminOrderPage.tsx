@@ -13,6 +13,8 @@ import {
   persianDateTime,
   persianDigits,
   persianNumber,
+  randomID,
+  sendPilotEvent,
   salesChannelLabels,
   salesChannels,
   statusStyles,
@@ -133,9 +135,14 @@ export default function AdminOrderPage() {
     try {
       await navigator.clipboard.writeText(finalPaymentMessage(value));
       setFinalCopyState("copied");
+      recordLinkCopy(value, "final_payment");
     } catch {
       setFinalCopyState("failed");
     }
+  }
+
+  function recordLinkCopy(value: AdminOrder, source: "order_detail" | "final_payment") {
+    sendPilotEvent(`/api/orders/${value.id}/link-copied`, { method: "clipboard", source, eventKey: randomID() });
   }
 
   async function requestFinalPayment() {
@@ -406,7 +413,7 @@ export default function AdminOrderPage() {
       <section className="mt-5 rounded-3xl border border-ledger bg-white p-5">
         <h2 className="font-black">لینک مشتری</h2>
         <p className="mt-3 break-all text-left text-xs" dir="ltr">{order.customerUrl}</p>
-        {saving !== "link" && <CopyButton value={order.customerUrl} label="کپی لینک مشتری" />}
+        {saving !== "link" && <CopyButton value={order.customerUrl} label="کپی لینک مشتری" onCopied={() => recordLinkCopy(order, "order_detail")} />}
         <p className="mt-3 text-xs leading-6 text-ink/65">اگر لینک فاش شده است، لینک جدید بسازید. لینک فعلی دیگر قابل استفاده نخواهد بود.</p>
         <button className="secondary-button mt-3 w-full text-error" type="button" onClick={rotateCustomerLink} disabled={Boolean(saving)}>
           {saving === "link" ? <LoaderCircle className="size-5 animate-spin" aria-hidden="true" /> : <RefreshCw className="size-5" aria-hidden="true" />}

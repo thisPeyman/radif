@@ -226,7 +226,12 @@ func importHistoricalOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 			if err := tx.Create(&items).Error; err != nil {
 				return err
 			}
-			return tx.Create(&OrderStatusHistory{OrderID: order.ID, NewStatus: input.Status, ChangedByAdminID: &admin.ID}).Error
+			if err := tx.Create(&OrderStatusHistory{OrderID: order.ID, NewStatus: input.Status, ChangedByAdminID: &admin.ID}).Error; err != nil {
+				return err
+			}
+			return recordPilotEvent(tx, PilotEvent{EventName: "order_created", OrderID: &order.ID, AdminID: &admin.ID, ShopID: &order.ShopID, EventKey: keyedPilotEvent(input.CreateKey), CreatedAt: now}, map[string]any{
+				"salesChannel": input.SalesChannel, "source": "historical", "userAgent": pilotUserAgent(c),
+			})
 		})
 		if errors.Is(err, errOrderAlreadyCreated) {
 			err := db.Joins("JOIN shops ON shops.id = orders.shop_id").Joins("JOIN admin_shops ON admin_shops.shop_id = shops.id AND admin_shops.admin_id = ?", admin.ID).Where("orders.create_key = ?", input.CreateKey).First(&existing).Error

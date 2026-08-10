@@ -162,7 +162,6 @@ func createOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 			InternalNote:          input.InternalNote,
 			Status:                waitingInfoStatus,
 		}
-		metadata, _ := json.Marshal(map[string]int64{"elapsedMs": input.ElapsedMS})
 		now := time.Now()
 		var products []Product
 		err = db.Transaction(func(tx *gorm.DB) error {
@@ -196,11 +195,9 @@ func createOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 			if err := tx.Create(&history).Error; err != nil {
 				return err
 			}
-			events := []PilotEvent{
-				{EventName: "order_create_started", OrderID: &order.ID, AdminID: &admin.ID, CreatedAt: now.Add(-time.Duration(input.ElapsedMS) * time.Millisecond)},
-				{EventName: "order_created", OrderID: &order.ID, AdminID: &admin.ID, Metadata: string(metadata), CreatedAt: now},
-			}
-			return tx.Create(&events).Error
+			return recordPilotEvent(tx, PilotEvent{EventName: "order_created", OrderID: &order.ID, AdminID: &admin.ID, ShopID: &order.ShopID, EventKey: keyedPilotEvent(input.CreateKey), CreatedAt: now}, map[string]any{
+				"elapsedMs": input.ElapsedMS, "salesChannel": input.SalesChannel, "source": "normal", "userAgent": pilotUserAgent(c),
+			})
 		})
 		if errors.Is(err, errOrderAlreadyCreated) {
 			err := db.Preload("Items").Joins("JOIN shops ON shops.id = orders.shop_id").Joins("JOIN admin_shops ON admin_shops.shop_id = shops.id AND admin_shops.admin_id = ?", admin.ID).Where("orders.create_key = ?", input.CreateKey).First(&existing).Error
@@ -259,6 +256,13 @@ func cancelStaleWaitingInfoOrders(db *gorm.DB, now time.Time) (int64, error) {
 				continue
 			}
 			if err := tx.Create(&OrderStatusHistory{OrderID: orderID, PreviousStatus: waitingInfoStatus, NewStatus: "cancelled"}).Error; err != nil {
+				return err
+			}
+			var order Order
+			if err := tx.Select("shop_id").First(&order, orderID).Error; err != nil {
+				return err
+			}
+			if err := recordPilotEvent(tx, PilotEvent{EventName: "order_status_changed", OrderID: &orderID, ShopID: &order.ShopID}, map[string]any{"previousStatus": waitingInfoStatus, "newStatus": "cancelled", "source": "automatic"}); err != nil {
 				return err
 			}
 			cancelled++
@@ -352,7 +356,7 @@ func updateOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 		admin := c.Get(adminContextKey).(*Admin)
 		err = db.Transaction(func(tx *gorm.DB) error {
 			var order Order
-			err := tx.Joins("JOIN shops ON shops.id = orders.shop_id").Joins("JOIN admin_shops ON admin_shops.shop_id = shops.id AND admin_shops.admin_id = ?", admin.ID).Where("orders.id = ?", orderID).First(&order).Error
+			err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Joins("JOIN shops ON shops.id = orders.shop_id").Joins("JOIN admin_shops ON admin_shops.shop_id = shops.id AND admin_shops.admin_id = ?", admin.ID).Where("orders.id = ?", orderID).First(&order).Error
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return echo.NewHTTPError(http.StatusNotFound, "سفارش پیدا نشد.")
 			}
@@ -403,6 +407,7 @@ func updateOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 				updates["customer_address"], updates["customer_postal_code"], updates["customer_note"] = details.address, details.postalCode, details.note
 			}
 			statusChanged := input.Status != nil && *input.Status != order.Status
+			trackingAdded := input.ShipmentTrackingCode != nil && order.ShipmentTrackingCode == "" && *input.ShipmentTrackingCode != ""
 			previousStatus := order.Status
 			if statusChanged {
 				if *input.Status == waitingInfoStatus && order.CustomerSubmittedAt != nil {
@@ -419,7 +424,17 @@ func updateOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 				}
 			}
 			if statusChanged {
-				return tx.Create(&OrderStatusHistory{OrderID: order.ID, PreviousStatus: previousStatus, NewStatus: *input.Status, ChangedByAdminID: &admin.ID}).Error
+				if err := tx.Create(&OrderStatusHistory{OrderID: order.ID, PreviousStatus: previousStatus, NewStatus: *input.Status, ChangedByAdminID: &admin.ID}).Error; err != nil {
+					return err
+				}
+				if err := recordPilotEvent(tx, PilotEvent{EventName: "order_status_changed", OrderID: &order.ID, AdminID: &admin.ID, ShopID: &order.ShopID}, map[string]any{"previousStatus": previousStatus, "newStatus": *input.Status}); err != nil {
+					return err
+				}
+			}
+			if trackingAdded {
+				if err := recordPilotEvent(tx, PilotEvent{EventName: "tracking_added", OrderID: &order.ID, AdminID: &admin.ID, ShopID: &order.ShopID}, nil); err != nil {
+					return err
+				}
 			}
 			return nil
 		})
@@ -539,6 +554,7 @@ func listOrders(db *gorm.DB) echo.HandlerFunc {
 		if err := query.Offset(offset).Limit(21).Find(&orders).Error; err != nil {
 			return err
 		}
+		observeAdminShopView(db, c, "admin_order_list_viewed", admin.ID, shop.ID)
 		hasMore := len(orders) > 20
 		if hasMore {
 			orders = orders[:20]
@@ -594,6 +610,7 @@ func getOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 		if err != nil {
 			return err
 		}
+		observeOrderView(db, c, "admin_order_viewed", order)
 		return adminOrderResponse(c, cfg, order)
 	}
 }
@@ -747,7 +764,7 @@ func rotateCustomerLink(db *gorm.DB, cfg config) echo.HandlerFunc {
 			if err := tx.Model(&order).Update("secret_token", token).Error; err != nil {
 				return err
 			}
-			return tx.Create(&PilotEvent{EventName: "order_link_rotated", OrderID: &order.ID, AdminID: &admin.ID}).Error
+			return recordPilotEvent(tx, PilotEvent{EventName: "order_link_rotated", OrderID: &order.ID, AdminID: &admin.ID, ShopID: &order.ShopID}, nil)
 		})
 		if err != nil {
 			return err
@@ -761,6 +778,11 @@ func publicOrder(db *gorm.DB) echo.HandlerFunc {
 		order, err := findPublicOrder(db, c.Param("token"))
 		if err != nil {
 			return err
+		}
+		if order.CustomerSubmittedAt == nil {
+			observeOrderView(db, c, "public_order_opened", order)
+		} else {
+			observeOrderView(db, c, "customer_status_viewed", order)
 		}
 		return publicOrderResponse(c, http.StatusOK, order)
 	}
@@ -892,8 +914,8 @@ func recordPublicSupportClick(db *gorm.DB) echo.HandlerFunc {
 		if order.CustomerSubmittedAt != nil {
 			action = "correction_request"
 		}
-		metadata, _ := json.Marshal(map[string]string{"action": action, "channel": support["channel"]})
-		if err := db.Create(&PilotEvent{EventName: "public_support_clicked", OrderID: &order.ID, Metadata: string(metadata)}).Error; err != nil {
+		now := time.Now()
+		if err := recordPilotEvent(db, PilotEvent{EventName: "public_support_clicked", OrderID: &order.ID, ShopID: &order.ShopID, EventKey: keyedPilotEvent("public_support_clicked", strconv.FormatUint(uint64(order.ID), 10), action, strconv.FormatInt(now.Truncate(pilotViewWindow).Unix(), 10)), CreatedAt: now}, map[string]any{"action": action, "channel": support["channel"], "userAgent": pilotUserAgent(c)}); err != nil {
 			return err
 		}
 		return c.NoContent(http.StatusNoContent)
@@ -915,7 +937,38 @@ func recordLinkCopied(db *gorm.DB) echo.HandlerFunc {
 		if err != nil {
 			return err
 		}
-		if err := db.Create(&PilotEvent{EventName: "order_link_copied", OrderID: &order.ID, AdminID: &admin.ID}).Error; err != nil {
+		var input struct {
+			Method   string `json:"method"`
+			Source   string `json:"source"`
+			EventKey string `json:"eventKey"`
+		}
+		if c.Request().ContentLength != 0 {
+			c.Request().Body = http.MaxBytesReader(c.Response(), c.Request().Body, 4<<10)
+			decoder := json.NewDecoder(c.Request().Body)
+			decoder.DisallowUnknownFields()
+			if err := decoder.Decode(&input); err != nil {
+				return echo.NewHTTPError(http.StatusBadRequest, "رویداد اشتراک‌گذاری معتبر نیست.")
+			}
+			if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+				return echo.NewHTTPError(http.StatusBadRequest, "رویداد اشتراک‌گذاری معتبر نیست.")
+			}
+		}
+		if input.Method == "" {
+			input.Method = "unknown"
+		}
+		if input.Source == "" {
+			input.Source = "unknown"
+		}
+		validMethods := map[string]bool{"clipboard": true, "native_share": true, "unknown": true}
+		validSources := map[string]bool{"create": true, "order_detail": true, "final_payment": true, "unknown": true}
+		if !validMethods[input.Method] || !validSources[input.Source] || len(input.EventKey) > 100 {
+			return echo.NewHTTPError(http.StatusBadRequest, "رویداد اشتراک‌گذاری معتبر نیست.")
+		}
+		event := PilotEvent{EventName: "order_link_copied", OrderID: &order.ID, AdminID: &admin.ID, ShopID: &order.ShopID}
+		if input.EventKey != "" {
+			event.EventKey = keyedPilotEvent(input.EventKey)
+		}
+		if err := recordPilotEvent(db, event, map[string]any{"method": input.Method, "source": input.Source, "userAgent": pilotUserAgent(c)}); err != nil {
 			return err
 		}
 		return c.NoContent(http.StatusNoContent)

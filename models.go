@@ -130,6 +130,9 @@ type PilotEvent struct {
 	Order     *Order
 	AdminID   *uint `gorm:"index"`
 	Admin     *Admin
+	ShopID    *uint `gorm:"index"`
+	Shop      *Shop
+	EventKey  *string
 	Metadata  string `gorm:"type:text"`
 	CreatedAt time.Time
 }

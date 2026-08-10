@@ -65,6 +65,10 @@ func TestCreateOrderAndRecordCopy(t *testing.T) {
 		t.Fatal(err)
 	}
 	deliveryDate := time.Now().AddDate(0, 0, 7).Format("2006-01-02")
+	started := request(e, http.MethodPost, fmt.Sprintf("/api/shops/%d/pilot-events", products[0].ShopID), `{"eventName":"order_create_started","createKey":"create-test-1"}`, testOrigin, cookie)
+	if started.Code != http.StatusNoContent {
+		t.Fatalf("creation start event returned %d: %s", started.Code, started.Body.String())
+	}
 	body := fmt.Sprintf(`{"createKey":"create-test-1","shopId":%d,"items":[{"productId":%d,"quantity":2},{"productId":%d,"quantity":1}],"amount":1520000,"estimatedDeliveryDate":%q,"salesChannel":"whatsapp","conversationReference":" سارا ۰۹۱۲۳۴۵۶۷۸۹ ","internalNote":" test ","elapsedMs":1234}`, products[0].ShopID, products[0].ID, products[1].ID, deliveryDate)
 	response := request(e, http.MethodPost, "/api/orders", body, testOrigin, cookie)
 	if response.Code != http.StatusCreated {
@@ -109,7 +113,7 @@ func TestCreateOrderAndRecordCopy(t *testing.T) {
 		t.Fatalf("unexpected history: %#v, error %v", history, err)
 	}
 	var eventCount int64
-	if err := db.Model(&PilotEvent{}).Where("order_id = ?", order.ID).Count(&eventCount).Error; err != nil || eventCount != 2 {
+	if err := db.Model(&PilotEvent{}).Where("order_id = ?", order.ID).Count(&eventCount).Error; err != nil || eventCount != 1 {
 		t.Fatalf("creation event count = %d, error %v", eventCount, err)
 	}
 	publicResponse := request(e, http.MethodGet, "/api"+parsedURL.Path, "", "", nil)

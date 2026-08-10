@@ -159,6 +159,28 @@ export class ApiError extends Error {
   }
 }
 
+export type PilotFailureReason = "client_validation" | "conflict" | "request" | "network" | "server";
+
+export function pilotFailureReason(reason: unknown): PilotFailureReason {
+  if (!(reason instanceof ApiError)) return "network";
+  if (reason.status === 409) return "conflict";
+  if (reason.status >= 500) return "server";
+  return "request";
+}
+
+export function sendPilotEvent(path: string, event: Record<string, string>) {
+  const body = JSON.stringify(event);
+  const fallback = () => {
+    try { navigator.sendBeacon(path, new Blob([body], { type: "application/json" })); } catch { /* Best-effort pilot signal. */ }
+  };
+  void fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body,
+    keepalive: true,
+  }).then((response) => { if (response.status === 429 || response.status >= 500) fallback(); }).catch(fallback);
+}
+
 export async function api<T>(path: string, options?: RequestInit): Promise<T> {
   let response: Response;
   try {

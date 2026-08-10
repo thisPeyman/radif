@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { NavLink } from "react-router";
 import { ErrorNotice, ProductChoices, type SelectedOrderItem } from "../components";
 import DeliveryDateSelect from "../DeliveryDateSelect";
-import { addWorkingDays, api, defaultShareMessageTemplate, normalizeDigits, persianDate, persianDigits, persianNumber, randomID, readLastSalesChannel, rememberSalesChannel, salesChannelLabels, salesChannels, todayISO, type CreatedOrder, type Product, type SalesChannel, type Shop } from "../shared";
+import { addWorkingDays, api, defaultShareMessageTemplate, normalizeDigits, persianDate, persianDigits, persianNumber, pilotFailureReason, randomID, readLastSalesChannel, rememberSalesChannel, salesChannelLabels, salesChannels, sendPilotEvent, todayISO, type CreatedOrder, type Product, type SalesChannel, type Shop } from "../shared";
 
 function newCreateKey(shopID: number) {
   const storageKey = `radif_create_key_${shopID}`;
@@ -68,6 +68,10 @@ export default function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; on
 
   useEffect(loadProducts, [shop.id]);
 
+  useEffect(() => {
+    sendPilotEvent(`/api/shops/${shop.id}/pilot-events`, { eventName: "order_create_started", createKey, source: "normal" });
+  }, [createKey, shop.id]);
+
   function updateItems(next: SelectedOrderItem[]) {
     const total = next.reduce((sum, item) => sum + item.product.defaultPrice * item.quantity, 0);
     setItems(next);
@@ -78,9 +82,14 @@ export default function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; on
     setError("");
   }
 
-  async function recordCopy(order: CreatedOrder) {
+  async function recordCopy(order: CreatedOrder, method: "clipboard" | "native_share") {
     const path = `/api/orders/${order.id}/link-copied`;
-    try { await api<void>(path, { method: "POST" }); } catch { navigator.sendBeacon(path); }
+    const body = JSON.stringify({ method, source: "create", eventKey: randomID() });
+    try {
+      await api<void>(path, { method: "POST", headers: { "Content-Type": "application/json" }, body });
+    } catch {
+      navigator.sendBeacon(path, new Blob([body], { type: "application/json" }));
+    }
   }
 
   function shareMessage(order: CreatedOrder) {
@@ -100,7 +109,7 @@ export default function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; on
       if (!navigator.clipboard?.writeText) throw new Error("clipboard unavailable");
       await navigator.clipboard.writeText(text);
       setCopyState("copied");
-      await recordCopy(order).catch(() => undefined);
+      await recordCopy(order, "clipboard").catch(() => undefined);
     } catch { setCopyState("failed"); }
   }
 
@@ -108,6 +117,7 @@ export default function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; on
     if (!canShare) { await copyText(order, shareMessage(order)); return; }
     try {
       await navigator.share({ text: shareMessage(order) });
+      await recordCopy(order, "native_share").catch(() => undefined);
     } catch (reason) {
       if (reason instanceof DOMException && reason.name === "AbortError") return;
       await copyText(order, shareMessage(order));
@@ -119,15 +129,18 @@ export default function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; on
     const numericAmount = Number(amount);
     if (!items.length || !Number.isSafeInteger(numericAmount) || numericAmount <= 0) {
       setAmountError("مبلغ سفارش را به‌صورت یک عدد بزرگ‌تر از صفر وارد کنید.");
+      sendPilotEvent(`/api/shops/${shop.id}/pilot-events`, { eventName: "order_create_failed", createKey, eventKey: randomID(), reason: "client_validation", source: "normal" });
       return;
     }
     const numericInitialPayment = Number(initialPaymentAmount);
     if (splitPayment && (!Number.isSafeInteger(numericInitialPayment) || numericInitialPayment <= 0 || numericInitialPayment >= numericAmount)) {
       setInitialPaymentError("مبلغ پرداخت اول باید بیشتر از صفر و کمتر از مبلغ سفارش باشد.");
+      sendPilotEvent(`/api/shops/${shop.id}/pilot-events`, { eventName: "order_create_failed", createKey, eventKey: randomID(), reason: "client_validation", source: "normal" });
       return;
     }
     if (!deliveryDate || deliveryDate < todayISO()) {
       setDeliveryDateError("تاریخ تحویل را برای امروز یا یکی از روزهای بعد انتخاب کنید.");
+      sendPilotEvent(`/api/shops/${shop.id}/pilot-events`, { eventName: "order_create_failed", createKey, eventKey: randomID(), reason: "client_validation", source: "normal" });
       return;
     }
     setAmountError("");
@@ -168,10 +181,11 @@ export default function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; on
       setCreated(order);
       if (reservedCopy && resolveReserved) {
         resolveReserved(new Blob([shareMessage(order)], { type: "text/plain" }));
-        try { await reservedCopy; setCopyState("copied"); await recordCopy(order).catch(() => undefined); } catch { await copyText(order, shareMessage(order)); }
+        try { await reservedCopy; setCopyState("copied"); await recordCopy(order, "clipboard").catch(() => undefined); } catch { await copyText(order, shareMessage(order)); }
       } else { await copyText(order, shareMessage(order)); }
     } catch (reason) {
       rejectReserved?.(reason);
+      sendPilotEvent(`/api/shops/${shop.id}/pilot-events`, { eventName: "order_create_failed", createKey, eventKey: randomID(), reason: pilotFailureReason(reason), source: "normal" });
       setError(reason instanceof Error ? reason.message : "سفارش ساخته نشد. دوباره تلاش کنید.");
     } finally {
       setPending(false);

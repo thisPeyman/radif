@@ -1,9 +1,9 @@
 import { ArrowRight, BookOpenText, CheckCircle2, ChevronDown, ClipboardCheck, LoaderCircle, Package, RotateCcw } from "lucide-react";
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { NavLink } from "react-router";
 import { ErrorNotice, ProductChoices, ReceiptPicker, type SelectedOrderItem } from "../components";
 import DeliveryDateSelect from "../DeliveryDateSelect";
-import { adminStatusLabels, api, normalizeDigits, normalizeIranianMobile, persianDate, persianDigits, persianNumber, randomID, readLastSalesChannel, rememberSalesChannel, salesChannelLabels, salesChannels, type CreatedOrder, type Product, type SalesChannel, type Shop } from "../shared";
+import { adminStatusLabels, api, normalizeDigits, normalizeIranianMobile, persianDate, persianDigits, persianNumber, pilotFailureReason, randomID, readLastSalesChannel, rememberSalesChannel, salesChannelLabels, salesChannels, sendPilotEvent, type CreatedOrder, type Product, type SalesChannel, type Shop } from "../shared";
 
 const importStatuses = ["waiting_payment", "paid", "preparing", "shipped", "cancelled"];
 const emptyCustomer = { fullName: "", mobile: "", address: "", postalCode: "" };
@@ -46,6 +46,7 @@ export default function HistoricalOrderPage({ shop, onBusyChange }: { shop: Shop
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [created, setCreated] = useState<CreatedOrder | null>(null);
+  const startedKey = useRef("");
 
   useEffect(() => () => onBusyChange(false), [onBusyChange]);
   useEffect(() => {
@@ -66,19 +67,29 @@ export default function HistoricalOrderPage({ shop, onBusyChange }: { shop: Shop
   useEffect(loadProducts, [shop.id]);
 
   function updateItems(next: SelectedOrderItem[]) {
+    if (next.length && startedKey.current !== createKey) {
+      startedKey.current = createKey;
+      sendPilotEvent(`/api/shops/${shop.id}/pilot-events`, { eventName: "order_create_started", createKey, source: "historical" });
+    }
     setItems(next);
     setAmount(String(next.reduce((total, item) => total + item.product.defaultPrice * item.quantity, 0)));
     setError("");
+  }
+
+  function recordFailure(reason: "client_validation" | "conflict" | "request" | "network" | "server") {
+    sendPilotEvent(`/api/shops/${shop.id}/pilot-events`, { eventName: "order_create_failed", createKey, eventKey: randomID(), reason, source: "historical" });
   }
 
   function openReview(event: FormEvent) {
     event.preventDefault();
     if (receiptBusy) {
       setError("کمی صبر کنید تا تصویر رسید آماده شود.");
+      recordFailure("client_validation");
       return;
     }
     if (status === "waiting_payment" && !receipt) {
       setError("برای وضعیت در انتظار تأیید پرداخت، تصویر رسید را انتخاب کنید.");
+      recordFailure("client_validation");
       return;
     }
     const numericAmount = Number(amount);
@@ -86,14 +97,17 @@ export default function HistoricalOrderPage({ shop, onBusyChange }: { shop: Shop
     const postalCode = normalizeDigits(customer.postalCode);
     if (!items.length || !Number.isSafeInteger(numericAmount) || numericAmount <= 0) {
       setError("محصول‌ها و مبلغ نهایی سفارش را بررسی کنید.");
+      recordFailure("client_validation");
       return;
     }
     if (!deliveryDate) {
       setError("تاریخ تحویل را انتخاب کنید.");
+      recordFailure("client_validation");
       return;
     }
     if (!customer.fullName.trim() || !customer.address.trim() || !/^09\d{9}$/.test(mobile) || (postalCode !== "" && !/^\d{10}$/.test(postalCode))) {
       setError("نام، شماره موبایل، نشانی و کد پستی مشتری را بررسی کنید.");
+      recordFailure("client_validation");
       return;
     }
     setCustomer({ ...customer, mobile, postalCode });
@@ -145,6 +159,7 @@ export default function HistoricalOrderPage({ shop, onBusyChange }: { shop: Shop
       reset();
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (reason) {
+      recordFailure(pilotFailureReason(reason));
       setError(reason instanceof Error ? reason.message : "سفارش ثبت نشد. دوباره تلاش کنید.");
     } finally {
       setPending(false);
