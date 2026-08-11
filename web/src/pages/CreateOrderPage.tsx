@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { NavLink } from "react-router";
 import { ErrorNotice, ProductChoices, type SelectedOrderItem } from "../components";
 import DeliveryDateSelect from "../DeliveryDateSelect";
-import { addWorkingDays, api, defaultShareMessageTemplate, normalizeDigits, persianDate, persianDigits, persianNumber, pilotFailureReason, randomID, readLastSalesChannel, rememberSalesChannel, salesChannelLabels, salesChannels, sendPilotEvent, todayISO, type CreatedOrder, type Product, type SalesChannel, type Shop } from "../shared";
+import { addWorkingDays, api, normalizeDigits, orderShareMessage, persianDate, persianDigits, persianNumber, pilotFailureReason, randomID, readLastSalesChannel, rememberSalesChannel, salesChannelLabels, salesChannels, sendPilotEvent, todayISO, type CreatedOrder, type Product, type SalesChannel, type Shop } from "../shared";
 
 function newCreateKey(shopID: number) {
   const storageKey = `radif_create_key_${shopID}`;
@@ -43,7 +43,8 @@ export default function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; on
   const [updatedDeliveryDate, setUpdatedDeliveryDate] = useState("");
   const [deliveryUpdatePending, setDeliveryUpdatePending] = useState(false);
   const [deliveryUpdateError, setDeliveryUpdateError] = useState("");
-  const [copyState, setCopyState] = useState<"copying" | "copied" | "failed">("copying");
+  const [copyState, setCopyState] = useState<"idle" | "copying" | "copied" | "shared" | "failed">("idle");
+  const [linkCopyState, setLinkCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const startedAt = useRef(performance.now());
   const [createKey, setCreateKey] = useState(() => newCreateKey(shop.id));
   const canShare = typeof navigator.share === "function";
@@ -93,34 +94,37 @@ export default function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; on
   }
 
   function shareMessage(order: CreatedOrder) {
-    const values: Record<string, string> = {
-      "{shopName}": shop.name,
-      "{orderCode}": order.orderCode,
-      "{customerUrl}": order.customerUrl,
-      "{amount}": `${persianNumber(Number(amount))} تومان`,
-      "{deliveryDate}": persianDate(order.estimatedDeliveryDate),
-    };
-    return (shop.shareMessageTemplate || defaultShareMessageTemplate).replace(/\{(?:shopName|orderCode|customerUrl|amount|deliveryDate)\}/g, (placeholder) => values[placeholder]);
+    return orderShareMessage(shop, order, Number(amount));
   }
 
-  async function copyText(order: CreatedOrder, text: string) {
-    setCopyState("copying");
+  async function copyMessage(order: CreatedOrder, showState = true) {
+    if (showState) setCopyState("copying");
     try {
       if (!navigator.clipboard?.writeText) throw new Error("clipboard unavailable");
-      await navigator.clipboard.writeText(text);
-      setCopyState("copied");
+      await navigator.clipboard.writeText(shareMessage(order));
+      if (showState) setCopyState("copied");
       await recordCopy(order, "clipboard").catch(() => undefined);
     } catch { setCopyState("failed"); }
   }
 
+  async function copyCustomerLink(order: CreatedOrder) {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("clipboard unavailable");
+      await navigator.clipboard.writeText(order.customerUrl);
+      setLinkCopyState("copied");
+      await recordCopy(order, "clipboard").catch(() => undefined);
+    } catch { setLinkCopyState("failed"); }
+  }
+
   async function shareOrder(order: CreatedOrder) {
-    if (!canShare) { await copyText(order, shareMessage(order)); return; }
+    if (!canShare) { await copyMessage(order); return; }
     try {
       await navigator.share({ text: shareMessage(order) });
+      setCopyState("shared");
       await recordCopy(order, "native_share").catch(() => undefined);
     } catch (reason) {
       if (reason instanceof DOMException && reason.name === "AbortError") return;
-      await copyText(order, shareMessage(order));
+      await copyMessage(order);
     }
   }
 
@@ -181,8 +185,8 @@ export default function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; on
       setCreated(order);
       if (reservedCopy && resolveReserved) {
         resolveReserved(new Blob([shareMessage(order)], { type: "text/plain" }));
-        try { await reservedCopy; setCopyState("copied"); await recordCopy(order, "clipboard").catch(() => undefined); } catch { await copyText(order, shareMessage(order)); }
-      } else { await copyText(order, shareMessage(order)); }
+        try { await reservedCopy; await recordCopy(order, "clipboard").catch(() => undefined); } catch { await copyMessage(order, false); }
+      } else { await copyMessage(order, false); }
     } catch (reason) {
       rejectReserved?.(reason);
       sendPilotEvent(`/api/shops/${shop.id}/pilot-events`, { eventName: "order_create_failed", createKey, eventKey: randomID(), reason: pilotFailureReason(reason), source: "normal" });
@@ -231,6 +235,8 @@ export default function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; on
     setDeliveryDateError("");
     setEditingDeliveryDate(false);
     setDeliveryUpdateError("");
+    setCopyState("idle");
+    setLinkCopyState("idle");
     const key = randomID();
     sessionStorage.setItem(`radif_create_key_${shop.id}`, key);
     setCreateKey(key);
@@ -241,11 +247,7 @@ export default function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; on
     <section className="page-content flex min-h-[70dvh] flex-col justify-center" aria-live="polite">
       <span className="grid size-16 place-items-center rounded-3xl bg-teal text-white"><ClipboardCheck className="size-8" strokeWidth={1.8} aria-hidden="true" /></span>
       <p className="page-kicker mt-6">{created.orderCode.replace(/\d/g, (digit) => persianDigits[Number(digit)])}</p><h1 className="page-title mt-1">سفارش ساخته شد</h1>
-      <p className="mt-3 leading-7 text-ink/70">
-        {copyState === "copied" && "متن کپی شد و آماده فرستادن در گفتگو است."}
-        {copyState === "copying" && "در حال کپی‌کردن متن…"}
-        {copyState === "failed" && "کپی خودکار در این مرورگر انجام نشد. لینک را از کادر زیر کپی کنید."}
-      </p>
+      <p className="mt-3 leading-7 text-ink/70">لینک مشتری ساخته شد؛ پیام سفارش را همین‌جا بفرستید یا دوباره کپی کنید.</p>
       <div className="mt-5 rounded-2xl bg-ledger/70 p-4">
         <div className="flex items-center gap-3">
           <CalendarDays className="size-5 shrink-0 text-teal" aria-hidden="true" />
@@ -280,14 +282,32 @@ export default function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; on
           </div>
         )}
       </div>
-      {canShare && <button className="primary-button mt-6 w-full" type="button" onClick={() => shareOrder(created)}><Share2 className="size-5" aria-hidden="true" />اشتراک‌گذاری پیام</button>}
-      <div className={`${canShare ? "mt-3" : "mt-6"} rounded-3xl border border-saffron/50 bg-saffron/10 p-4`}>
+      <section className="mt-5 overflow-hidden rounded-3xl border border-teal/20 bg-white shadow-sm" aria-label="ارسال پیام سفارش">
+        <div className="flex items-center justify-between gap-3 bg-teal/6 p-4">
+          <div>
+            <p className="font-black">پیام سفارش آماده است</p>
+            <p className="mt-1 text-xs leading-5 text-ink/60">شامل لینک و مشخصات سفارش برای مشتری</p>
+          </div>
+          {copyState !== "idle" && <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${copyState === "failed" ? "bg-error/10 text-error" : "bg-white text-teal"}`} role="status">
+            {copyState === "copying" ? "در حال کپی…" : copyState === "copied" ? "کپی شد" : copyState === "shared" ? "ارسال شد" : "کپی نشد"}
+          </span>}
+        </div>
+        <div className={`grid gap-2 border-t border-dashed border-teal/20 p-3 ${canShare ? "grid-cols-2" : ""}`}>
+          <button className="secondary-button min-h-11 w-full" type="button" onClick={() => copyMessage(created)} disabled={copyState === "copying"}>
+            {copyState === "copying" ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : copyState === "copied" ? <ClipboardCheck className="size-4" aria-hidden="true" /> : <Clipboard className="size-4" aria-hidden="true" />}
+            {copyState === "copied" ? "پیام کپی شد" : "کپی پیام"}
+          </button>
+          {canShare && <button className="secondary-button min-h-11 w-full border-teal/25 text-teal" type="button" onClick={() => shareOrder(created)}><Share2 className="size-4" aria-hidden="true" />ارسال</button>}
+        </div>
+      </section>
+      <div className="mt-3 rounded-2xl border border-ledger bg-ledger/35 p-3">
         <label className="text-sm font-bold" htmlFor="customer-link">لینک مشتری</label>
         <input id="customer-link" className="field mt-2 text-left text-sm" dir="ltr" readOnly value={created.customerUrl} onFocus={(event) => event.currentTarget.select()} />
-        <button className="secondary-button mt-3 w-full" type="button" onClick={() => copyText(created, created.customerUrl)} disabled={copyState === "copying"}>
-          {copyState === "copying" ? <LoaderCircle className="size-5 animate-spin" aria-hidden="true" /> : <Clipboard className="size-5" aria-hidden="true" />}
-          {copyState === "copying" ? "در حال کپی…" : "کپی لینک"}
+        <button className="secondary-button mt-2 min-h-11 w-full" type="button" onClick={() => copyCustomerLink(created)}>
+          {linkCopyState === "copied" ? <ClipboardCheck className="size-4" aria-hidden="true" /> : <Clipboard className="size-4" aria-hidden="true" />}
+          {linkCopyState === "copied" ? "لینک کپی شد" : "کپی لینک"}
         </button>
+        {linkCopyState === "failed" && <p className="mt-2 text-xs font-bold text-error" role="status">کپی لینک انجام نشد؛ متن کادر را انتخاب کنید.</p>}
       </div>
       <button className="secondary-button mt-8 w-full" type="button" onClick={reset} disabled={pending}>
         <Plus className="size-5" aria-hidden="true" />
@@ -435,7 +455,7 @@ export default function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; on
               <ChevronDown className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-ink/60" aria-hidden="true" />
             </span>
           </label>
-          <details className="mt-5 rounded-3xl border border-ledger bg-white">
+          <details open className="mt-5 rounded-3xl border border-ledger bg-white">
             <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between px-4 font-bold">
               <span>جزئیات اختیاری</span>
               <ChevronDown className="details-chevron size-5 text-ink/70" aria-hidden="true" />

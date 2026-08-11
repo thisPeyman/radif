@@ -170,7 +170,7 @@ export default function AdminApp({ me, installPrompt, onInstallDone, onShopUpdat
             <Route path="/orders" element={<OrdersPage shop={selected} />} />
             <Route path="/orders/new" element={<CreateOrderPage key={selected.id} shop={selected} onBusyChange={setCreating} />} />
             <Route path="/orders/import" element={<HistoricalOrderPage key={selected.id} shop={selected} onBusyChange={setCreating} />} />
-            <Route path="/orders/:orderID" element={<AdminOrderPage />} />
+            <Route path="/orders/:orderID" element={<AdminOrderPage shops={me.shops} />} />
             <Route path="/products" element={<ProductsPage key={selected.id} shop={selected} />} />
             <Route path="/products/new" element={<ProductFormPage key={selected.id} shop={selected} mode="create" />} />
             <Route path="/products/:productID/edit" element={<ProductFormPage key={`${selected.id}-${location.pathname}`} shop={selected} mode="edit" />} />

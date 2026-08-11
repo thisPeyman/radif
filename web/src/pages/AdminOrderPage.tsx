@@ -1,4 +1,4 @@
-import { BadgeCheck, Clipboard, ClipboardCheck, CreditCard, LoaderCircle, RefreshCw, Send } from "lucide-react";
+import { BadgeCheck, Clipboard, ClipboardCheck, CreditCard, LoaderCircle, RefreshCw, Send, Share2 } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { NavLink, useLocation, useParams } from "react-router";
 import { CopyButton, ErrorNotice } from "../components";
@@ -9,6 +9,7 @@ import {
   emptyCustomerDraft,
   normalizeDigits,
   normalizeIranianMobile,
+  orderShareMessage,
   persianDate,
   persianDateTime,
   persianDigits,
@@ -21,9 +22,10 @@ import {
   type AdminOrder,
   type CustomerDraft,
   type SalesChannel,
+  type Shop,
 } from "../shared";
 
-export default function AdminOrderPage() {
+export default function AdminOrderPage({ shops }: { shops: Shop[] }) {
   const { orderID = "" } = useParams();
   const location = useLocation();
   const [order, setOrder] = useState<AdminOrder | null>(null);
@@ -40,7 +42,9 @@ export default function AdminOrderPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<"" | "status" | "date" | "tracking" | "customer" | "internal" | "link" | "requestFinal" | "confirmFinal">("");
   const [finalCopyState, setFinalCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const [messageState, setMessageState] = useState<"idle" | "copied" | "shared" | "failed">("idle");
   const [error, setError] = useState("");
+  const canShare = typeof navigator.share === "function";
 
   useEffect(() => {
     const controller = new AbortController();
@@ -49,6 +53,7 @@ export default function AdminOrderPage() {
     setError("");
     setLinkRotated(false);
     setFinalCopyState("idle");
+    setMessageState("idle");
     api<AdminOrder>(`/api/orders/${encodeURIComponent(orderID)}`, { signal: controller.signal })
       .then((response) => {
         setOrder(response);
@@ -119,6 +124,7 @@ export default function AdminOrderPage() {
       setOrder((current) => current ? { ...current, customerUrl: response.customerUrl } : current);
       setLinkRotated(true);
       setFinalCopyState("idle");
+      setMessageState("idle");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "لینک جدید ساخته نشد.");
     } finally {
@@ -141,8 +147,35 @@ export default function AdminOrderPage() {
     }
   }
 
-  function recordLinkCopy(value: AdminOrder, source: "order_detail" | "final_payment") {
-    sendPilotEvent(`/api/orders/${value.id}/link-copied`, { method: "clipboard", source, eventKey: randomID() });
+  function messageForOrder(value: AdminOrder) {
+    return orderShareMessage(shops.find((shop) => shop.id === value.shop.id) ?? value.shop, value, value.amount);
+  }
+
+  async function copyOrderMessage() {
+    if (!order) return;
+    try {
+      await navigator.clipboard.writeText(messageForOrder(order));
+      setMessageState("copied");
+      recordLinkCopy(order, "order_detail", "clipboard");
+    } catch {
+      setMessageState("failed");
+    }
+  }
+
+  async function shareOrderMessage() {
+    if (!order) return;
+    try {
+      await navigator.share({ text: messageForOrder(order) });
+      setMessageState("shared");
+      recordLinkCopy(order, "order_detail", "native_share");
+    } catch (reason) {
+      if (reason instanceof DOMException && reason.name === "AbortError") return;
+      await copyOrderMessage();
+    }
+  }
+
+  function recordLinkCopy(value: AdminOrder, source: "order_detail" | "final_payment", method: "clipboard" | "native_share" = "clipboard") {
+    sendPilotEvent(`/api/orders/${value.id}/link-copied`, { method, source, eventKey: randomID() });
   }
 
   async function requestFinalPayment() {
@@ -185,6 +218,12 @@ export default function AdminOrderPage() {
       <NavLink className="inline-flex min-h-11 items-center text-sm font-black text-teal" to={`/orders${location.search}`}>بازگشت به سفارش‌ها</NavLink>
       <p className="page-kicker mt-2">{order.orderCode.replace(/\d/g, (digit) => persianDigits[Number(digit)])} · {order.shop.name}</p>
       <h1 className="page-title">عملیات سفارش</h1>
+      <div className="mt-1 flex min-h-11 flex-wrap items-center gap-x-1 text-xs" aria-label="ارسال پیام سفارش">
+        <span className="ml-1 font-bold text-ink/45">پیام مشتری:</span>
+        <button className="inline-flex min-h-11 items-center gap-1.5 px-2 font-black text-teal" type="button" onClick={copyOrderMessage}><Clipboard className="size-4" aria-hidden="true" />کپی پیام</button>
+        {canShare && <button className="inline-flex min-h-11 items-center gap-1.5 px-2 font-black text-teal" type="button" onClick={shareOrderMessage}><Share2 className="size-4" aria-hidden="true" />ارسال</button>}
+        {messageState !== "idle" && <span className={`mr-auto font-bold ${messageState === "failed" ? "text-error" : "text-teal"}`} role="status">{messageState === "copied" ? "کپی شد" : messageState === "shared" ? "ارسال شد" : "کپی نشد"}</span>}
+      </div>
       {error && <div className="mt-4"><ErrorNotice>{error}</ErrorNotice></div>}
 
       <section className={`mt-5 rounded-3xl border-r-4 bg-white p-5 shadow-sm ${statusStyles[order.status]?.rail ?? "border-ink"}`}>

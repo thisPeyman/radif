@@ -292,7 +292,7 @@ export default function HistoricalOrderPage({ shop, onBusyChange }: { shop: Shop
                 {salesChannels.map((channel) => <option key={channel} value={channel}>{salesChannelLabels[channel]}</option>)}
               </select>
             </label>
-            <details className="mt-5 rounded-3xl border border-ledger bg-white">
+            <details open className="mt-5 rounded-3xl border border-ledger bg-white">
               <summary className="flex min-h-14 list-none items-center justify-between px-4 font-bold"><span>جزئیات اختیاری</span><ChevronDown className="details-chevron size-5 text-ink/70" aria-hidden="true" /></summary>
               <div className="space-y-5 border-t border-ledger p-4">
                 <label className="block"><span className="mb-2 block text-sm font-bold">مرجع گفتگو</span><input className="field" dir="auto" maxLength={100} value={conversationReference} onChange={(event) => setConversationReference(event.target.value)} placeholder="نام کاربری، موبایل، نام نمایشی یا هر نشانه دیگر" /></label>

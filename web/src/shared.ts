@@ -278,6 +278,21 @@ export function persianDate(value: string) {
   return value ? dateFormat.format(new Date(`${value}T12:00:00Z`)) : "";
 }
 
+export function orderShareMessage(
+  shop: Pick<Shop, "name" | "shareMessageTemplate">,
+  order: Pick<CreatedOrder, "orderCode" | "customerUrl" | "estimatedDeliveryDate">,
+  amount: number,
+) {
+  const values: Record<string, string> = {
+    "{shopName}": shop.name,
+    "{orderCode}": order.orderCode,
+    "{customerUrl}": order.customerUrl,
+    "{amount}": `${persianNumber(amount)} تومان`,
+    "{deliveryDate}": persianDate(order.estimatedDeliveryDate),
+  };
+  return (shop.shareMessageTemplate || defaultShareMessageTemplate).replace(/\{(?:shopName|orderCode|customerUrl|amount|deliveryDate)\}/g, (placeholder) => values[placeholder]);
+}
+
 export function persianDateTime(value?: string) {
   return value ? dateTimeFormat.format(new Date(value)) : "";
 }
