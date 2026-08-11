@@ -55,6 +55,7 @@ func requestFinalPayment(db *gorm.DB, cfg config) echo.HandlerFunc {
 			if err := tx.Model(&order).Updates(map[string]any{
 				"final_payment_requested_at": now,
 				"final_payment_card_number":  shop.PaymentCardNumber,
+				"final_payment_iban":         shop.PaymentIBAN,
 				"final_payment_instructions": shop.PaymentInstructions,
 			}).Error; err != nil {
 				return err

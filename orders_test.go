@@ -95,7 +95,7 @@ func TestCreateOrderAndRecordCopy(t *testing.T) {
 	if err := db.First(&order, output.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if order.Status != waitingInfoStatus || order.EstimatedDeliveryDate != deliveryDate || order.SalesChannel != "whatsapp" || order.ConversationReference != "سارا ۰۹۱۲۳۴۵۶۷۸۹" || order.InternalNote != "test" || order.Amount != 1520000 || order.PaymentCardNumber != "6037991812345678" || order.PaymentInstructions != "به نام فروشگاه خانه آبی" {
+	if order.Status != waitingInfoStatus || order.EstimatedDeliveryDate != deliveryDate || order.SalesChannel != "whatsapp" || order.ConversationReference != "سارا ۰۹۱۲۳۴۵۶۷۸۹" || order.InternalNote != "test" || order.Amount != 1520000 || order.PaymentCardNumber != "6037991812345678" || order.PaymentIBAN != "IR820540102680020817909002" || order.PaymentInstructions != "به نام فروشگاه خانه آبی" {
 		t.Fatalf("unexpected order: %#v", order)
 	}
 	if err := db.Model(&order).Update("sales_channel", "sms").Error; err == nil {
@@ -117,17 +117,17 @@ func TestCreateOrderAndRecordCopy(t *testing.T) {
 		t.Fatalf("creation event count = %d, error %v", eventCount, err)
 	}
 	publicResponse := request(e, http.MethodGet, "/api"+parsedURL.Path, "", "", nil)
-	if publicResponse.Code != http.StatusOK || !strings.Contains(publicResponse.Body.String(), deliveryDate) || !strings.Contains(publicResponse.Body.String(), products[0].Name) || !strings.Contains(publicResponse.Body.String(), `"paymentCardNumber":"6037991812345678"`) {
+	if publicResponse.Code != http.StatusOK || !strings.Contains(publicResponse.Body.String(), deliveryDate) || !strings.Contains(publicResponse.Body.String(), products[0].Name) || !strings.Contains(publicResponse.Body.String(), `"paymentCardNumber":"6037991812345678"`) || !strings.Contains(publicResponse.Body.String(), `"paymentIban":"IR820540102680020817909002"`) {
 		t.Fatalf("public order returned %d: %s", publicResponse.Code, publicResponse.Body.String())
 	}
 	if body := publicResponse.Body.String(); strings.Contains(body, "internalNote") || strings.Contains(body, "salesChannel") || strings.Contains(body, "conversationReference") || strings.Contains(body, "customerMobile") || strings.Contains(body, "۰۹۱۲۳۴۵۶۷۸۹") || strings.Contains(body, "test") {
 		t.Fatalf("public order exposed private data: %s", body)
 	}
-	if err := db.Model(&Shop{}).Where("id = ?", order.ShopID).Updates(map[string]any{"payment_card_number": "5022291012345678", "payment_instructions": "حساب جدید"}).Error; err != nil {
+	if err := db.Model(&Shop{}).Where("id = ?", order.ShopID).Updates(map[string]any{"payment_card_number": "5022291012345678", "payment_iban": "IR110000000000000000000000", "payment_instructions": "حساب جدید"}).Error; err != nil {
 		t.Fatal(err)
 	}
 	publicResponse = request(e, http.MethodGet, "/api"+parsedURL.Path, "", "", nil)
-	if !strings.Contains(publicResponse.Body.String(), `"paymentCardNumber":"6037991812345678"`) || !strings.Contains(publicResponse.Body.String(), `"paymentInstructions":"به نام فروشگاه خانه آبی"`) {
+	if !strings.Contains(publicResponse.Body.String(), `"paymentCardNumber":"6037991812345678"`) || !strings.Contains(publicResponse.Body.String(), `"paymentIban":"IR820540102680020817909002"`) || !strings.Contains(publicResponse.Body.String(), `"paymentInstructions":"به نام فروشگاه خانه آبی"`) {
 		t.Fatalf("existing order payment profile changed with shop: %s", publicResponse.Body.String())
 	}
 	if strings.Contains(publicResponse.Body.String(), `"support"`) {

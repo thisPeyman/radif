@@ -202,6 +202,7 @@ func importHistoricalOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 				return err
 			}
 			order.PaymentCardNumber = shop.PaymentCardNumber
+			order.PaymentIBAN = shop.PaymentIBAN
 			order.PaymentInstructions = shop.PaymentInstructions
 			if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where("id IN ? AND shop_id = ? AND active = ?", productIDs, input.ShopID, true).Find(&products).Error; err != nil {
 				return err

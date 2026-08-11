@@ -82,12 +82,15 @@ func TestMigrateAndSeedIsRepeatable(t *testing.T) {
 	if db.Migrator().HasColumn(&Order{}, "receipt_uploaded_at") {
 		t.Fatal("orders contains obsolete receipt_uploaded_at column")
 	}
-	for _, column := range []string{"instagram_username", "whatsapp_number", "support_channel", "share_message_template"} {
+	for _, column := range []string{"instagram_username", "whatsapp_number", "support_channel", "share_message_template", "payment_iban"} {
 		if !db.Migrator().HasColumn(&Shop{}, column) {
 			t.Fatalf("shops is missing %s", column)
 		}
 	}
-	for _, column := range []string{"payment_card_number", "payment_instructions"} {
+	if !db.Migrator().HasColumn(&ShopPaymentCard{}, "iban") {
+		t.Fatal("shop_payment_cards is missing iban")
+	}
+	for _, column := range []string{"payment_card_number", "payment_iban", "payment_instructions", "final_payment_iban"} {
 		if !db.Migrator().HasColumn(&Order{}, column) {
 			t.Fatalf("orders is missing %s", column)
 		}

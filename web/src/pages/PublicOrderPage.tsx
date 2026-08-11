@@ -19,6 +19,10 @@ import {
   type PublicOrder,
 } from "../shared";
 
+function formatIBAN(value: string) {
+  return value.match(/.{1,4}/g)?.join(" ") ?? value;
+}
+
 export default function PublicOrderPage() {
   const { token = "" } = useParams();
   const [order, setOrder] = useState<PublicOrder | null>(null);
@@ -35,6 +39,7 @@ export default function PublicOrderPage() {
   const [pending, setPending] = useState(false);
   const [finalPending, setFinalPending] = useState(false);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const [ibanCopyState, setIBANCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const [amountCopyState, setAmountCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const formStarted = useRef(false);
 
@@ -90,6 +95,13 @@ export default function PublicOrderPage() {
     const cardNumber = order.customerSubmitted && order.finalPaymentRequested ? order.finalPaymentCardNumber : order.paymentCardNumber;
     if (!cardNumber) return;
     try { await navigator.clipboard.writeText(cardNumber); setCopyState("copied"); } catch { setCopyState("failed"); }
+  }
+
+  async function copyPaymentIBAN() {
+    if (!order) return;
+    const iban = order.customerSubmitted && order.finalPaymentRequested ? order.finalPaymentIban : order.paymentIban;
+    if (!iban) return;
+    try { await navigator.clipboard.writeText(iban); setIBANCopyState("copied"); } catch { setIBANCopyState("failed"); }
   }
 
   async function copyPaymentAmount() {
@@ -196,6 +208,7 @@ export default function PublicOrderPage() {
   const initialPaymentConfirmed = Boolean(order?.history.some((entry) => entry.status === "paid"));
   const initialPaymentActive = Boolean(order?.initialPaymentAmount && !order.customerSubmitted && order.customerSubmissionAllowed);
   const finalPaymentActive = Boolean(order?.initialPaymentAmount && order.customerSubmitted && order.finalPaymentRequested && !order.finalReceiptUploaded && !order.finalPaymentConfirmed && order.status !== "cancelled");
+  const paymentIban = order?.customerSubmitted && order.finalPaymentRequested ? order.finalPaymentIban : order?.paymentIban;
 
   return (
     <div className="app-viewport min-h-dvh px-5 pb-10 pt-[max(1.5rem,env(safe-area-inset-top))] text-ink sm:min-h-[760px] sm:px-6">
@@ -327,23 +340,38 @@ export default function PublicOrderPage() {
 
           {(!order.initialPaymentAmount || !order.customerSubmitted || (order.finalPaymentRequested && !order.finalReceiptUploaded && !order.finalPaymentConfirmed && order.status !== "cancelled")) && <section className="mt-6 rounded-3xl border border-ledger bg-white p-5">
             <h2 className="text-sm font-black">{order.initialPaymentAmount ? order.customerSubmitted ? "پرداخت نهایی" : "پرداخت اول" : "اطلاعات پرداخت فروشگاه"}</h2>
-            <p className="mt-2 text-sm leading-7 text-ink/70">{order.initialPaymentAmount ? `مبلغ ${persianNumber(order.customerSubmitted ? order.finalPaymentAmount ?? 0 : order.initialPaymentAmount)} تومان را به شماره کارت زیر واریز کنید.` : "مبلغ سفارش را به شماره کارت زیر واریز کنید."}</p>
+            <p className="mt-2 text-sm leading-7 text-ink/70">{order.initialPaymentAmount ? `مبلغ ${persianNumber(order.customerSubmitted ? order.finalPaymentAmount ?? 0 : order.initialPaymentAmount)} تومان را به ${paymentIban ? "یکی از شماره‌های زیر" : "شماره کارت زیر"} واریز کنید.` : `مبلغ سفارش را به ${paymentIban ? "یکی از شماره‌های زیر" : "شماره کارت زیر"} واریز کنید.`}</p>
             <button
-              className={`${order.initialPaymentAmount ? "mt-4" : "mt-3"} flex min-h-16 w-full items-center justify-between gap-3 rounded-2xl border-2 border-saffron/60 bg-saffron/10 px-4 py-3 text-ink`}
+              className={`${order.initialPaymentAmount ? "mt-4" : "mt-3"} block min-h-16 w-full rounded-2xl border-2 border-saffron/60 bg-saffron/10 px-4 py-3 text-ink`}
               type="button"
               onClick={copyPaymentCardNumber}
             >
-              <span className="text-right">
-                <span className="block text-xs font-bold text-ink/60">شماره کارت</span>
-                <strong className="mt-1 block select-all text-lg tracking-wider" dir="ltr">{(order.customerSubmitted && order.finalPaymentRequested ? order.finalPaymentCardNumber : order.paymentCardNumber)?.match(/.{1,4}/g)?.join(" ")}</strong>
+              <span className="flex items-center justify-between gap-3">
+                <span className="text-xs font-bold text-ink/60">شماره کارت</span>
+                <span className="flex items-center gap-1.5 text-xs font-black text-teal">
+                  {copyState === "copied" ? <ClipboardCheck className="size-4" aria-hidden="true" /> : <Clipboard className="size-4" aria-hidden="true" />}
+                  {copyState === "copied" ? "کپی شد" : "کپی"}
+                </span>
               </span>
-              <span className="flex shrink-0 items-center gap-2 text-sm font-black text-teal">
-                {copyState === "copied" ? <ClipboardCheck className="size-5" aria-hidden="true" /> : <Clipboard className="size-5" aria-hidden="true" />}
-                {copyState === "copied" ? "کپی شد" : "کپی"}
-              </span>
+              <strong className="mt-2 block select-all whitespace-nowrap text-center text-lg font-black tracking-wider" dir="ltr">{(order.customerSubmitted && order.finalPaymentRequested ? order.finalPaymentCardNumber : order.paymentCardNumber)?.match(/.{1,4}/g)?.join(" ")}</strong>
             </button>
+            {paymentIban && <button
+              className="mt-3 block min-h-16 w-full rounded-2xl border border-ledger bg-paper/60 px-4 py-3 text-ink"
+              type="button"
+              onClick={copyPaymentIBAN}
+            >
+              <span className="flex items-center justify-between gap-3">
+                <span className="text-xs font-bold text-ink/60">شماره شبا</span>
+                <span className="flex items-center gap-1.5 text-xs font-black text-teal">
+                  {ibanCopyState === "copied" ? <ClipboardCheck className="size-4" aria-hidden="true" /> : <Clipboard className="size-4" aria-hidden="true" />}
+                  {ibanCopyState === "copied" ? "کپی شد" : "کپی"}
+                </span>
+              </span>
+              <strong className="mt-2 block select-all whitespace-nowrap text-center text-[clamp(0.68rem,3.3vw,0.875rem)] font-black tracking-normal" dir="ltr">{formatIBAN(paymentIban)}</strong>
+            </button>}
             <p className="mt-3 whitespace-pre-wrap text-sm font-bold leading-7 text-ink/80">{order.customerSubmitted && order.finalPaymentRequested ? order.finalPaymentInstructions : order.paymentInstructions}</p>
             {copyState === "failed" && <p className="mt-2 text-sm text-error" role="alert">کپی خودکار ممکن نشد؛ شماره کارت بالا را نگه دارید و انتخاب کنید.</p>}
+            {ibanCopyState === "failed" && <p className="mt-2 text-sm text-error" role="alert">کپی خودکار ممکن نشد؛ شماره شبا بالا را نگه دارید و انتخاب کنید.</p>}
           </section>}
 
           {order.initialPaymentAmount && order.customerSubmitted && order.finalPaymentRequested && !order.finalPaymentConfirmed && (

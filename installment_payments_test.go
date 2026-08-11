@@ -61,19 +61,19 @@ func TestInstallmentPaymentFlow(t *testing.T) {
 		t.Fatalf("first payment confirmation returned %d: %s", response.Code, response.Body.String())
 	}
 	if err := db.Model(&Shop{}).Where("id = ?", order.ShopID).Updates(map[string]any{
-		"payment_card_number": "5022291012345678", "payment_instructions": "کارت تسویه",
+		"payment_card_number": "5022291012345678", "payment_iban": "IR110000000000000000000000", "payment_instructions": "کارت تسویه",
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
 	requested := request(e, http.MethodPost, requestPath, "", testOrigin, cookie)
-	if requested.Code != http.StatusOK || !strings.Contains(requested.Body.String(), `"finalPaymentCardNumber":"5022291012345678"`) || !strings.Contains(requested.Body.String(), `"finalPaymentRequested":true`) {
+	if requested.Code != http.StatusOK || !strings.Contains(requested.Body.String(), `"finalPaymentCardNumber":"5022291012345678"`) || !strings.Contains(requested.Body.String(), `"finalPaymentIban":"IR110000000000000000000000"`) || !strings.Contains(requested.Body.String(), `"finalPaymentRequested":true`) {
 		t.Fatalf("final payment request returned %d: %s", requested.Code, requested.Body.String())
 	}
 	if err := db.First(&order, order.ID).Error; err != nil {
 		t.Fatal(err)
 	}
 	requestedAt := order.FinalPaymentRequestedAt
-	if requestedAt == nil || order.FinalPaymentCardNumber != "5022291012345678" {
+	if requestedAt == nil || order.FinalPaymentCardNumber != "5022291012345678" || order.FinalPaymentIBAN != "IR110000000000000000000000" {
 		t.Fatalf("final request was not snapshotted: %#v", order)
 	}
 	if retry := request(e, http.MethodPost, requestPath, "", testOrigin, cookie); retry.Code != http.StatusOK {
@@ -84,7 +84,7 @@ func TestInstallmentPaymentFlow(t *testing.T) {
 	}
 
 	public = request(e, http.MethodGet, "/api"+publicPath, "", "", nil)
-	if !strings.Contains(public.Body.String(), `"finalPaymentCardNumber":"5022291012345678"`) || strings.Contains(public.Body.String(), "finalReceiptFilePath") {
+	if !strings.Contains(public.Body.String(), `"finalPaymentCardNumber":"5022291012345678"`) || !strings.Contains(public.Body.String(), `"finalPaymentIban":"IR110000000000000000000000"`) || strings.Contains(public.Body.String(), "finalReceiptFilePath") {
 		t.Fatalf("unexpected requested public response: %s", public.Body.String())
 	}
 	finalUploadPath := "/api" + publicPath + "/final-payment/receipt"

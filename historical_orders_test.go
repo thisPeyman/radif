@@ -78,7 +78,7 @@ func TestImportHistoricalOrder(t *testing.T) {
 	if err := db.First(&order, output.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if order.Status != "preparing" || order.EstimatedDeliveryDate != "2020-01-02" || order.Amount != 650000 || order.CustomerSubmittedAt == nil || order.CustomerMobile != "09123456789" || order.CustomerPostalCode != "1234567890" || order.ReceiptFilePath != "" || order.SalesChannel != "telegram" || order.ConversationReference != "سارا در تلگرام" || order.PaymentCardNumber != "6037991812345678" || order.PaymentInstructions != "به نام فروشگاه خانه آبی" {
+	if order.Status != "preparing" || order.EstimatedDeliveryDate != "2020-01-02" || order.Amount != 650000 || order.CustomerSubmittedAt == nil || order.CustomerMobile != "09123456789" || order.CustomerPostalCode != "1234567890" || order.ReceiptFilePath != "" || order.SalesChannel != "telegram" || order.ConversationReference != "سارا در تلگرام" || order.PaymentCardNumber != "6037991812345678" || order.PaymentIBAN != "IR820540102680020817909002" || order.PaymentInstructions != "به نام فروشگاه خانه آبی" {
 		t.Fatalf("unexpected imported order: %#v", order)
 	}
 	var item OrderItem
@@ -94,7 +94,7 @@ func TestImportHistoricalOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	public := request(e, http.MethodGet, "/api"+parsed.Path, "", "", nil)
-	if public.Code != http.StatusOK || !strings.Contains(public.Body.String(), `"customerSubmitted":true`) || !strings.Contains(public.Body.String(), `"receiptUploaded":false`) || !strings.Contains(public.Body.String(), `"status":"preparing"`) {
+	if public.Code != http.StatusOK || !strings.Contains(public.Body.String(), `"customerSubmitted":true`) || !strings.Contains(public.Body.String(), `"receiptUploaded":false`) || !strings.Contains(public.Body.String(), `"paymentIban":"IR820540102680020817909002"`) || !strings.Contains(public.Body.String(), `"status":"preparing"`) {
 		t.Fatalf("public imported order returned %d: %s", public.Code, public.Body.String())
 	}
 	if body := public.Body.String(); strings.Contains(body, "salesChannel") || strings.Contains(body, "conversationReference") || strings.Contains(body, "سارا در تلگرام") {

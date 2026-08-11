@@ -7,6 +7,10 @@ function formatCardNumber(value: string) {
   return value.match(/.{1,4}/g)?.join(" ") ?? value;
 }
 
+function formatIBAN(value: string) {
+  return value.match(/.{1,4}/g)?.join(" ") ?? value;
+}
+
 export default function AccountPage({ me, shop, onShopUpdated, onLogout }: {
   me: Me;
   shop: Shop;
@@ -20,9 +24,11 @@ export default function AccountPage({ me, shop, onShopUpdated, onLogout }: {
   const [cardPending, setCardPending] = useState("");
   const [cardError, setCardError] = useState("");
   const [cardNumber, setCardNumber] = useState("");
+  const [iban, setIBAN] = useState("");
   const [paymentInstructions, setPaymentInstructions] = useState("");
   const [addingCard, setAddingCard] = useState(false);
   const [editingCardID, setEditingCardID] = useState<number | null>(null);
+  const [editedIBAN, setEditedIBAN] = useState("");
   const [editedInstructions, setEditedInstructions] = useState("");
   const [instagramUsername, setInstagramUsername] = useState(shop.instagramUsername ?? "");
   const [whatsappNumber, setWhatsappNumber] = useState(shop.whatsappNumber ? `+${shop.whatsappNumber}` : "");
@@ -38,6 +44,7 @@ export default function AccountPage({ me, shop, onShopUpdated, onLogout }: {
     setError("");
     setCardError("");
     setCardNumber("");
+    setIBAN("");
     setPaymentInstructions("");
     setAddingCard(false);
     setEditingCardID(null);
@@ -56,10 +63,11 @@ export default function AccountPage({ me, shop, onShopUpdated, onLogout }: {
       const card = await api<PaymentCard>(`/api/shops/${shop.id}/payment-cards`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cardNumber, paymentInstructions }),
+        body: JSON.stringify({ cardNumber, iban, paymentInstructions }),
       });
       updateCards([...shop.paymentCards, card]);
       setCardNumber("");
+      setIBAN("");
       setPaymentInstructions("");
       setAddingCard(false);
     } catch (reason) {
@@ -69,7 +77,7 @@ export default function AccountPage({ me, shop, onShopUpdated, onLogout }: {
     }
   }
 
-  async function saveCardInstructions(cardID: number) {
+  async function savePaymentCard(cardID: number) {
     if (cardPending || saving) return;
     setCardPending(`edit-${cardID}`);
     setCardError("");
@@ -77,12 +85,12 @@ export default function AccountPage({ me, shop, onShopUpdated, onLogout }: {
       const card = await api<PaymentCard>(`/api/shops/${shop.id}/payment-cards/${cardID}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ paymentInstructions: editedInstructions }),
+        body: JSON.stringify({ iban: editedIBAN, paymentInstructions: editedInstructions }),
       });
       updateCards(shop.paymentCards.map((current) => current.id === card.id ? card : current));
       setEditingCardID(null);
     } catch (reason) {
-      setCardError(reason instanceof Error ? reason.message : "توضیحات پرداخت ذخیره نشد.");
+      setCardError(reason instanceof Error ? reason.message : "اطلاعات پرداخت ذخیره نشد.");
     } finally {
       setCardPending("");
     }
@@ -177,20 +185,23 @@ export default function AccountPage({ me, shop, onShopUpdated, onLogout }: {
                 <button
                   className={`grid size-11 shrink-0 place-items-center rounded-xl transition-colors ${card.active ? "bg-white/10 text-white hover:bg-white/15" : "text-teal hover:bg-ledger/70"}`}
                   type="button"
-                  aria-label={`ویرایش توضیحات کارت ${formatCardNumber(card.cardNumber)}`}
-                  onClick={() => { setEditingCardID(card.id); setEditedInstructions(card.paymentInstructions); setCardError(""); }}
+                  aria-label={`ویرایش اطلاعات کارت ${formatCardNumber(card.cardNumber)}`}
+                  onClick={() => { setEditingCardID(card.id); setEditedIBAN(card.iban); setEditedInstructions(card.paymentInstructions); setCardError(""); }}
                 >
                   <Pencil className="size-4" aria-hidden="true" />
                 </button>
               </div>
               <p className="relative mt-3 text-left text-lg font-black tracking-[0.08em] sm:text-xl" dir="ltr">{formatCardNumber(card.cardNumber)}</p>
+              {card.iban && <p className={`relative mt-2 text-left text-sm font-bold tracking-wide ${card.active ? "text-white/75" : "text-ink/65"}`} dir="ltr">{formatIBAN(card.iban)}</p>}
               {editingCardID === card.id ? (
                 <div className={`relative mt-4 border-t pt-4 ${card.active ? "border-white/15" : "border-ledger"}`}>
+                  <label className={`mb-2 block text-xs font-bold ${card.active ? "text-white/70" : "text-ink/60"}`} htmlFor={`card-iban-${card.id}`}>شماره شبا (اختیاری)</label>
+                  <input id={`card-iban-${card.id}`} className="field mb-4 text-left tracking-wide text-ink" dir="ltr" autoComplete="off" autoCapitalize="characters" placeholder="IR12 3456 7890 1234 5678 9012 34" value={editedIBAN} onChange={(event) => setEditedIBAN(event.target.value)} />
                   <label className={`mb-2 block text-xs font-bold ${card.active ? "text-white/70" : "text-ink/60"}`} htmlFor={`card-instructions-${card.id}`}>توضیحات پرداخت</label>
                   <textarea id={`card-instructions-${card.id}`} className="field min-h-28 resize-y leading-7 text-ink" maxLength={1000} value={editedInstructions} onChange={(event) => setEditedInstructions(event.target.value)} />
                   <div className="mt-3 grid grid-cols-2 gap-2">
                     <button className="secondary-button" type="button" onClick={() => setEditingCardID(null)}>انصراف</button>
-                    <button className="primary-button" type="button" disabled={cardPending !== "" || saving} onClick={() => saveCardInstructions(card.id)}>
+                    <button className="primary-button" type="button" disabled={cardPending !== "" || saving} onClick={() => savePaymentCard(card.id)}>
                       {cardPending === `edit-${card.id}` ? <LoaderCircle className="size-5 animate-spin" /> : <Check className="size-5" />}{cardPending === `edit-${card.id}` ? "در حال ذخیره…" : "ذخیره"}
                     </button>
                   </div>
@@ -219,6 +230,10 @@ export default function AccountPage({ me, shop, onShopUpdated, onLogout }: {
             <label className="mt-4 block" htmlFor="new-card-number">
               <span className="mb-2 block text-sm font-bold">شماره کارت</span>
               <input id="new-card-number" className="field text-left tracking-wider" inputMode="numeric" dir="ltr" autoComplete="off" placeholder="6037 9918 1234 5678" value={cardNumber} onChange={(event) => setCardNumber(event.target.value)} required />
+            </label>
+            <label className="mt-4 block" htmlFor="new-card-iban">
+              <span className="mb-2 block text-sm font-bold">شماره شبا (اختیاری)</span>
+              <input id="new-card-iban" className="field text-left tracking-wide" dir="ltr" autoComplete="off" autoCapitalize="characters" placeholder="IR12 3456 7890 1234 5678 9012 34" value={iban} onChange={(event) => setIBAN(event.target.value)} />
             </label>
             <label className="mt-4 block" htmlFor="new-card-instructions">
               <span className="mb-2 block text-sm font-bold">توضیحات پرداخت</span>

@@ -15,6 +15,7 @@ export type Shop = {
 export type PaymentCard = {
   id: number;
   cardNumber: string;
+  iban: string;
   paymentInstructions: string;
   active: boolean;
 };
@@ -77,12 +78,14 @@ export type PublicOrder = {
   status: string;
   estimatedDeliveryDate: string;
   paymentCardNumber: string;
+  paymentIban: string;
   paymentInstructions: string;
   customerSubmitted: boolean;
   customerSubmissionAllowed: boolean;
   receiptUploaded: boolean;
   finalPaymentRequested: boolean;
   finalPaymentCardNumber?: string;
+  finalPaymentIban?: string;
   finalPaymentInstructions?: string;
   finalReceiptUploaded: boolean;
   finalPaymentConfirmed: boolean;
@@ -136,6 +139,7 @@ export type AdminOrder = {
   finalPaymentRequested: boolean;
   finalPaymentRequestedAt?: string;
   finalPaymentCardNumber: string;
+  finalPaymentIban: string;
   finalPaymentInstructions: string;
   finalReceiptUploaded: boolean;
   finalReceiptUrl?: string;

@@ -170,6 +170,7 @@ func createOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 				return err
 			}
 			order.PaymentCardNumber = shop.PaymentCardNumber
+			order.PaymentIBAN = shop.PaymentIBAN
 			order.PaymentInstructions = shop.PaymentInstructions
 			if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where("id IN ? AND shop_id = ? AND active = ?", productIDs, input.ShopID, true).Find(&products).Error; err != nil {
 				return err
@@ -666,6 +667,7 @@ func adminOrderResponse(c echo.Context, cfg config, order Order) error {
 		"finalPaymentRequested":    order.FinalPaymentRequestedAt != nil,
 		"finalPaymentRequestedAt":  order.FinalPaymentRequestedAt,
 		"finalPaymentCardNumber":   order.FinalPaymentCardNumber,
+		"finalPaymentIban":         order.FinalPaymentIBAN,
 		"finalPaymentInstructions": order.FinalPaymentInstructions,
 		"finalReceiptUploaded":     order.FinalReceiptFilePath != "",
 		"finalPaymentConfirmed":    order.FinalPaymentConfirmedAt != nil,
@@ -822,9 +824,11 @@ func publicOrderResponse(c echo.Context, status int, order Order) error {
 	submitted := order.CustomerSubmittedAt != nil
 	receiptUploaded := order.ReceiptFilePath != ""
 	paymentCardNumber := order.PaymentCardNumber
+	paymentIBAN := order.PaymentIBAN
 	paymentInstructions := order.PaymentInstructions
 	if paymentCardNumber == "" {
 		paymentCardNumber = order.Shop.PaymentCardNumber
+		paymentIBAN = order.Shop.PaymentIBAN
 		paymentInstructions = order.Shop.PaymentInstructions
 	}
 	response := map[string]any{
@@ -835,6 +839,7 @@ func publicOrderResponse(c echo.Context, status int, order Order) error {
 		"status":                    order.Status,
 		"estimatedDeliveryDate":     order.EstimatedDeliveryDate,
 		"paymentCardNumber":         paymentCardNumber,
+		"paymentIban":               paymentIBAN,
 		"paymentInstructions":       paymentInstructions,
 		"customerSubmitted":         submitted,
 		"customerSubmissionAllowed": !submitted && order.Status == waitingInfoStatus,
@@ -852,6 +857,7 @@ func publicOrderResponse(c echo.Context, status int, order Order) error {
 	}
 	if order.FinalPaymentRequestedAt != nil {
 		response["finalPaymentCardNumber"] = order.FinalPaymentCardNumber
+		response["finalPaymentIban"] = order.FinalPaymentIBAN
 		response["finalPaymentInstructions"] = order.FinalPaymentInstructions
 	}
 	if support := publicSupport(order); support != nil {

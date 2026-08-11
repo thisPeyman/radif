@@ -31,6 +31,7 @@ type Shop struct {
 	LogoPath             string
 	ShortDescription     string
 	PaymentCardNumber    string `gorm:"not null"`
+	PaymentIBAN          string `gorm:"column:payment_iban;not null"`
 	PaymentInstructions  string `gorm:"not null"`
 	InstagramUsername    string `gorm:"not null"`
 	WhatsAppNumber       string `gorm:"column:whatsapp_number;not null"`
@@ -46,6 +47,7 @@ type ShopPaymentCard struct {
 	ID                  uint   `gorm:"primaryKey"`
 	ShopID              uint   `gorm:"not null;uniqueIndex:idx_shop_payment_cards_shop_number"`
 	CardNumber          string `gorm:"not null;uniqueIndex:idx_shop_payment_cards_shop_number"`
+	IBAN                string `gorm:"column:iban;not null"`
 	PaymentInstructions string `gorm:"not null"`
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
@@ -72,6 +74,7 @@ type Order struct {
 	ShopID                         uint   `gorm:"not null;index"`
 	Shop                           Shop
 	PaymentCardNumber              string
+	PaymentIBAN                    string `gorm:"column:payment_iban"`
 	PaymentInstructions            string
 	Items                          []OrderItem
 	History                        []OrderStatusHistory
@@ -89,6 +92,7 @@ type Order struct {
 	ReceiptFilePath                string
 	FinalPaymentRequestedAt        *time.Time
 	FinalPaymentCardNumber         string
+	FinalPaymentIBAN               string `gorm:"column:final_payment_iban"`
 	FinalPaymentInstructions       string
 	FinalReceiptFilePath           string
 	FinalPaymentConfirmedAt        *time.Time

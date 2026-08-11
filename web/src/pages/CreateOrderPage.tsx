@@ -247,7 +247,7 @@ export default function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; on
     <section className="page-content flex min-h-[70dvh] flex-col justify-center" aria-live="polite">
       <span className="grid size-16 place-items-center rounded-3xl bg-teal text-white"><ClipboardCheck className="size-8" strokeWidth={1.8} aria-hidden="true" /></span>
       <p className="page-kicker mt-6">{created.orderCode.replace(/\d/g, (digit) => persianDigits[Number(digit)])}</p><h1 className="page-title mt-1">سفارش ساخته شد</h1>
-      <p className="mt-3 leading-7 text-ink/70">لینک مشتری ساخته شد؛ پیام سفارش را همین‌جا بفرستید یا دوباره کپی کنید.</p>
+      <p className="mt-3 leading-7 text-ink/70">لینک مشتری آماده است. پیام را بفرستید یا کپی کنید.</p>
       <div className="mt-5 rounded-2xl bg-ledger/70 p-4">
         <div className="flex items-center gap-3">
           <CalendarDays className="size-5 shrink-0 text-teal" aria-hidden="true" />

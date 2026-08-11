@@ -181,7 +181,7 @@ func me(db *gorm.DB) echo.HandlerFunc {
 		for i, shop := range shops {
 			cards := make([]paymentCardResponse, len(shop.PaymentCards))
 			for j, card := range shop.PaymentCards {
-				cards[j] = paymentCardResponse{card.ID, card.CardNumber, card.PaymentInstructions, card.CardNumber == shop.PaymentCardNumber}
+				cards[j] = paymentCardResponse{ID: card.ID, CardNumber: card.CardNumber, IBAN: card.IBAN, PaymentInstructions: card.PaymentInstructions, Active: card.CardNumber == shop.PaymentCardNumber}
 			}
 			responseShops[i] = publicShop{shop.ID, shop.Name, shop.LogoPath, shop.ShortDescription, shop.InstagramUsername, shop.WhatsAppNumber, shop.SupportChannel, shop.ShareMessageTemplate, cards}
 		}

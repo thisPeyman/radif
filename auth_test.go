@@ -32,11 +32,11 @@ func newAuthTestServer(t *testing.T) (*gorm.DB, *echo.Echo, config, Admin) {
 	if err := db.First(&admin, "login = ?", "admin").Error; err != nil {
 		t.Fatal(err)
 	}
-	shop := Shop{Name: "خانه آبی", LogoPath: "/images/shop-blue.svg", PaymentCardNumber: "6037991812345678", PaymentInstructions: "به نام فروشگاه خانه آبی", Active: true}
+	shop := Shop{Name: "خانه آبی", LogoPath: "/images/shop-blue.svg", PaymentCardNumber: "6037991812345678", PaymentIBAN: "IR820540102680020817909002", PaymentInstructions: "به نام فروشگاه خانه آبی", Active: true}
 	if err := db.Create(&shop).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Create(&ShopPaymentCard{ShopID: shop.ID, CardNumber: shop.PaymentCardNumber, PaymentInstructions: shop.PaymentInstructions}).Error; err != nil {
+	if err := db.Create(&ShopPaymentCard{ShopID: shop.ID, CardNumber: shop.PaymentCardNumber, IBAN: shop.PaymentIBAN, PaymentInstructions: shop.PaymentInstructions}).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Create(&AdminShop{AdminID: admin.ID, ShopID: shop.ID}).Error; err != nil {
@@ -270,7 +270,7 @@ func TestManageShopPaymentCards(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := fmt.Sprintf("/api/shops/%d/payment-cards", shop.ID)
-	body := `{"cardNumber":"۵۰۲۲ ۲۹۱۰ ۱۲۳۴ ۵۶۷۸","paymentInstructions":" به نام حساب دوم "}`
+	body := `{"cardNumber":"۵۰۲۲ ۲۹۱۰ ۱۲۳۴ ۵۶۷۸","iban":"ir82 0540 1026 8002 0817 9090 02","paymentInstructions":" به نام حساب دوم "}`
 	if response := request(e, http.MethodPost, path, body, "https://wrong.test", cookie); response.Code != http.StatusForbidden {
 		t.Fatalf("wrong-origin card add returned %d", response.Code)
 	}
@@ -278,7 +278,7 @@ func TestManageShopPaymentCards(t *testing.T) {
 		t.Fatalf("card number with text returned %d: %s", response.Code, response.Body.String())
 	}
 	response := request(e, http.MethodPost, path, body, testOrigin, cookie)
-	if response.Code != http.StatusCreated || !strings.Contains(response.Body.String(), `"cardNumber":"5022291012345678"`) || !strings.Contains(response.Body.String(), `"active":false`) {
+	if response.Code != http.StatusCreated || !strings.Contains(response.Body.String(), `"cardNumber":"5022291012345678"`) || !strings.Contains(response.Body.String(), `"iban":"IR820540102680020817909002"`) || !strings.Contains(response.Body.String(), `"active":false`) {
 		t.Fatalf("card add returned %d: %s", response.Code, response.Body.String())
 	}
 	var card paymentCardResponse
@@ -301,25 +301,53 @@ func TestManageShopPaymentCards(t *testing.T) {
 	}
 	cardPath := fmt.Sprintf("%s/%d", path, card.ID)
 	response = request(e, http.MethodPatch, cardPath, `{"paymentInstructions":"توضیحات ویرایش‌شده"}`, testOrigin, cookie)
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "توضیحات ویرایش‌شده") {
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "توضیحات ویرایش‌شده") || !strings.Contains(response.Body.String(), `"iban":"IR820540102680020817909002"`) {
 		t.Fatalf("card edit returned %d: %s", response.Code, response.Body.String())
 	}
 	response = request(e, http.MethodPost, cardPath+"/activate", "", testOrigin, cookie)
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"active":true`) {
 		t.Fatalf("card activation returned %d: %s", response.Code, response.Body.String())
 	}
-	if err := db.First(&shop, shop.ID).Error; err != nil || shop.PaymentCardNumber != card.CardNumber || shop.PaymentInstructions != "توضیحات ویرایش‌شده" {
+	if err := db.First(&shop, shop.ID).Error; err != nil || shop.PaymentCardNumber != card.CardNumber || shop.PaymentIBAN != "IR820540102680020817909002" || shop.PaymentInstructions != "توضیحات ویرایش‌شده" {
 		t.Fatalf("active shop payment profile = %#v, error %v", shop, err)
 	}
-	response = request(e, http.MethodPatch, cardPath, `{"paymentInstructions":"توضیحات آینده"}`, testOrigin, cookie)
+	response = request(e, http.MethodPatch, cardPath, `{"iban":"IR110000000000000000000000","paymentInstructions":"توضیحات آینده"}`, testOrigin, cookie)
 	if response.Code != http.StatusOK {
 		t.Fatalf("active card edit returned %d: %s", response.Code, response.Body.String())
 	}
-	if err := db.First(&shop, shop.ID).Error; err != nil || shop.PaymentInstructions != "توضیحات آینده" {
+	if err := db.First(&shop, shop.ID).Error; err != nil || shop.PaymentIBAN != "IR110000000000000000000000" || shop.PaymentInstructions != "توضیحات آینده" {
 		t.Fatalf("active instructions were not projected to shop: %#v, error %v", shop, err)
 	}
 	meResponse := request(e, http.MethodGet, "/api/me", "", "", cookie)
-	if meResponse.Code != http.StatusOK || !strings.Contains(meResponse.Body.String(), `"cardNumber":"5022291012345678","paymentInstructions":"توضیحات آینده","active":true`) {
+	if meResponse.Code != http.StatusOK || !strings.Contains(meResponse.Body.String(), `"cardNumber":"5022291012345678","iban":"IR110000000000000000000000","paymentInstructions":"توضیحات آینده","active":true`) {
 		t.Fatalf("me did not include active payment card: %s", meResponse.Body.String())
+	}
+	response = request(e, http.MethodPatch, cardPath, `{"iban":"","paymentInstructions":"توضیحات آینده"}`, testOrigin, cookie)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"iban":""`) {
+		t.Fatalf("clearing iban returned %d: %s", response.Code, response.Body.String())
+	}
+	if err := db.First(&shop, shop.ID).Error; err != nil || shop.PaymentIBAN != "" {
+		t.Fatalf("cleared iban was not projected to shop: %#v, error %v", shop, err)
+	}
+}
+
+func TestNormalizeIBAN(t *testing.T) {
+	for _, test := range []struct {
+		input string
+		want  string
+		valid bool
+	}{
+		{"", "", true},
+		{"  ", "", true},
+		{"ir82 0540-1026 8002 0817 9090 02", "IR820540102680020817909002", true},
+		{"IR۸۲۰۵۴۰۱۰۲۶۸۰۰۲۰۸۱۷۹۰۹۰۰۲", "IR820540102680020817909002", true},
+		{"820540102680020817909002", "", false},
+		{"IR82054010268002081790900", "", false},
+		{"IR82054010268002081790900X", "", false},
+	} {
+		got, valid := normalizeIBAN(test.input)
+		if got != test.want || valid != test.valid {
+			t.Errorf("normalizeIBAN(%q) = %q, %v; want %q, %v", test.input, got, valid, test.want, test.valid)
+		}
 	}
 }
