@@ -1,6 +1,11 @@
 # MVP Product Document  
 ## Order Management for Instagram-Based Shops in Iran
 
+> **Historical document.** This proposal predates major implemented features
+> and contains obsolete behavior. Use `PRODUCT.md` for current product intent,
+> `AGENTS.md` and `CODEMAP.md` for implementation navigation, and code/tests as
+> final authority.
+
 > **Document language:** English  
 > **Product language:** Persian (Farsi), with full right-to-left support  
 > **Product stage:** MVP / Pilot  

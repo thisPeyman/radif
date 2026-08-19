@@ -2,7 +2,7 @@
 
 > Current product truth for product planning and AI conversations.
 >
-> Last reviewed against the implemented application: 2026-08-04.
+> Last reviewed against the implemented application: 2026-08-19.
 >
 > The older `instagram_order_mvp_product_document_en.md` and `MVP_PLAN.md`
 > explain the original intent, but they also contain planned or outdated
@@ -129,7 +129,7 @@ Everything in this section is implemented today.
 | Persistent shop identity | The active shop remains visible in the application header and is repeated during order creation. | Reduces wrong-shop order creation, especially for multi-page operators. |
 | Account summary and logout | Shows the operator's name, login, accessible-shop count, and a logout action. | Provides identity confirmation and safe session termination alongside the limited shop settings. |
 | Shop communication settings | An assigned operator can configure the shop's Instagram and WhatsApp contacts, choose which one appears on public orders, and customize the order-sharing message. | Makes the customer handoff and support path adjustable without requiring technical provisioning for routine text and contact changes. |
-| Payment-card settings | An assigned operator can add multiple 16-digit cards, edit their payment instructions, and choose the active card for future orders. Card numbers cannot currently be edited or deleted. | Supports changing payment destinations without changing old orders or requiring direct database work. |
+| Payment-card settings | An assigned operator can add multiple 16-digit cards with an optional IBAN, edit their payment instructions and IBAN, and choose the active card for future orders. Card numbers cannot currently be edited or deleted. | Supports changing payment destinations without changing old orders or requiring direct database work. |
 
 ### 5.3 Product Catalog For Order Entry
 
@@ -153,7 +153,7 @@ not browse it and cannot build carts themselves.
 | Automatic total | The interface calculates the total from product prices and quantities. | Removes repetitive arithmetic and speeds up repeat orders. |
 | Editable amount | The operator may override the calculated total with a positive toman amount. | Supports negotiated prices and one-off adjustments common in DM sales without building discounts or promotions. |
 | Optional split payment | For a new order, the operator may enter an initial amount below the total; Radif derives and clearly shows the exact remainder. Existing and imported orders stay single-payment. | Supports shops that collect part of the price before preparation and the remainder before dispatch without adding a general installment engine. |
-| Estimated delivery date | A required Persian-friendly date is visible to both operator and customer. The UI allows today through roughly two years ahead; the API requires today or later. | Creates a concrete fulfillment expectation and powers urgency-based order triage. |
+| Estimated delivery date | A required Persian-friendly date is visible to both operator and customer. The UI allows today through roughly two years ahead and offers working-day shortcuts; the API requires today or later. | Creates a concrete fulfillment expectation and powers urgency-based order triage. |
 | Sales channel and conversation reference | Every order records Instagram, WhatsApp, Telegram, Bale, or another sales channel. An optional free-text reference preserves a lightweight clue for finding the original conversation. | Supports sales beyond Instagram without requiring customer or conversation records. |
 | Optional internal note | The operator may save private context that is never shown publicly. | Keeps operational exceptions beside the order instead of buried in DMs. |
 | Order code | Every created order receives a short visible code based on its record ID. | Gives operators and customers an easy reference that is safer to discuss than a long secret URL. |
@@ -198,7 +198,7 @@ must not be exposed in public analytics, logs, screenshots, or support material.
 
 | Feature | Current behavior | Product reason |
 | --- | --- | --- |
-| Order payment details | Each order snapshots the shop's active card number and payment instructions at creation or import. The public order displays that snapshot and lets the customer copy the card number. | Fits the card-to-card payment habit used by the initial market while preventing later shop-setting changes from altering an existing payment request. |
+| Order payment details | Each order snapshots the shop's active card number, optional IBAN, and payment instructions at creation or import. The public order displays that snapshot and lets the customer copy the available banking identifiers. | Fits Iranian transfer workflows while preventing later shop-setting changes from altering an existing payment request. |
 | Banking-app amount | The public order shows the total in toman and can copy ten times that value as a rial number. | Reduces currency-conversion mistakes when the customer enters the amount in an Iranian banking application. |
 | One-page Persian form | Collects required full name, Iranian mobile, full address, and one receipt; postal code and customer note are optional. | Keeps the task short enough for Instagram's mobile browser and asks only for fulfillment data. |
 | Iranian number normalization | Persian, Arabic, and Latin digits are accepted; common `+98`, `0098`, and `98` mobile formats become `09xxxxxxxxx`. | Lets customers enter familiar formats while storing consistent data for operations. |
@@ -275,7 +275,7 @@ Current transition rules:
   cannot return to `waiting_info`, and receipt-less orders cannot enter
   `waiting_payment`.
 - Re-saving the same status does not create duplicate history.
-- Orders created at least 48 hours ago and currently in `waiting_info` are
+- Orders created at least 72 hours ago and currently in `waiting_info` are
   cancelled automatically at startup or during an hourly cleanup. An old order
   moved back to `waiting_info` can therefore be cancelled by the next cleanup.
 - Automatic cancellation creates a history entry and does not affect orders in
@@ -353,8 +353,9 @@ accidentally during feature work:
 - Money is stored and shown as positive integer toman amounts.
 - Each order item snapshots its unit price at creation.
 - The order's total can intentionally differ from the sum of item prices.
-- Each order snapshots the active payment card number and instructions, so
-  changing shop payment settings affects only future orders.
+- Each order snapshots the active payment card number, optional IBAN, and
+  instructions, so changing shop payment settings affects only future orders.
+- A final-payment request takes a second payment snapshot for the remainder.
 - Product names and images are not snapshotted. Editing a product changes how
   that product appears in old orders, but does not change old unit prices.
 - Customer links are high-entropy secrets but are currently stored so the admin
@@ -408,9 +409,12 @@ The current trust limits are equally important:
   and product-image backups; deployment documentation also covers manual
   off-site download and restore procedures.
 - Admin accounts are created or reset with a seed command.
+- A basic all-time shop report summarizes status counts, confirmed order value,
+  confirmed average value, and top confirmed products. It is status-derived,
+  not an accounting or reconciliation report.
 - Shop creation, name/logo branding, activation, and admin-shop assignments
   currently require direct database provisioning outside the product UI. The
-  deployment runbook contains current multi-admin provisioning SQL. Assigned
+  deployment runbook contains current provisioning SQL. Assigned
   operators manage payment cards, support contacts, and sharing-message settings
   from the Account screen.
 
@@ -466,8 +470,9 @@ fulfillment systems.
 
 ### Reporting And Data Governance
 
-- No analytics dashboard, accounting report, financial reconciliation, or
-  order export.
+- No accounting report, financial reconciliation, order export, or pilot-event
+  analytics dashboard. The current shop report is an operational summary based
+  on order statuses, not verified bank transactions.
 - No data retention controls, customer deletion, or media quota.
 - No automated off-site backup or backup-failure alerting.
 
@@ -487,6 +492,7 @@ product discussion should account for.
 | Customer submission is irreversible | Mistakes require operator intervention; the customer cannot replace a wrong receipt or address. |
 | Local media and in-memory throttling limit scaling | Multiple application instances would require shared media storage and coordinated rate limiting. |
 | Frontend verification is manual | There are no automated React, browser, narrow-screen, RTL, or accessibility tests. |
+| Working-day calendar needs annual maintenance | Delivery shortcuts use a hard-coded Iranian holiday list that currently covers Jalali year 1405, while the date picker permits later dates. |
 
 ## 12. Product Hypotheses And Success Signals
 
@@ -592,8 +598,3 @@ Here is the new evidence or question I want to discuss:
 Before selecting a roadmap, prefer collecting missing evidence over building a
 speculative system. The product succeeds when it removes operational disorder
 without becoming more work than the Instagram workflow it supports.
-
-## 15. Candidate Next Steps
-
-These candidates remain unimplemented and should still be validated against
-pilot evidence before becoming a roadmap.

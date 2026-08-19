@@ -1,35 +1,71 @@
-# Repository Guide
+# Agent Quickstart
+
+## Read Policy
+
+- Start here. Read `CODEMAP.md` only for unfamiliar or cross-cutting work, then inspect the relevant source and its test. Do not preload every document.
+- Implementation truth is code and tests; schema truth is `migrations/*.sql`; command truth is `Makefile`; product intent is `PRODUCT.md`; production procedure is `DEPLOYMENT.md`.
+- `MVP_PLAN.md` and `instagram_order_mvp_product_document_en.md` are historical and non-authoritative.
 
 ## Shape
 
-- The backend is one root Go module/package (`package main`). Normal startup opens PostgreSQL, applies embedded Goose migrations, starts stale-order cleanup, and serves Echo on `:8080`; `seed` is the only subcommand.
-- `web/` is a separate Vite/React npm package. Use `npm --prefix web ...`; its entry path is `web/index.html` -> `web/src/main.tsx` -> `web/src/App.tsx`.
-- Production is one Go process serving `/api/*` and the SPA from the relative path `web/dist`. Run locally built binaries from the repository root so assets resolve.
+- The backend is one root Go module/package (`package main`). `main.go:run` opens PostgreSQL, applies embedded Goose migrations, starts stale-order cleanup, and serves Echo on `:8080`; `seed` is the only subcommand.
+- `main.go:newServer` is the API route index. Handlers receive `*gorm.DB` directly; there is no repository/service layer.
+- `web/` is a separate Vite/React package. Entry: `web/index.html` -> `web/src/main.tsx` -> `web/src/App.tsx` -> `web/src/AdminApp.tsx` for authenticated routes.
+- Production is one Go process serving `/api/*` and the SPA from relative `web/dist`; run local binaries from the repository root.
+
+## Feature Lookup
+
+| Area | Backend | Frontend | Primary test |
+| --- | --- | --- | --- |
+| Startup, routes, config, DB | `main.go`, `config.go`, `database.go` | `App.tsx`, `AdminApp.tsx`, `shared.ts` | `main_test.go`, `database_test.go` |
+| Login, sessions, shop access/support | `auth.go` | `LoginPage.tsx`, `AccountPage.tsx` | `auth_test.go` |
+| Products and images | `products.go`, `images.go` | `ProductsPage.tsx`, `ProductFormPage.tsx`, `components.tsx` | `products_test.go` |
+| Order create/list/admin/public | `orders.go` | `CreateOrderPage.tsx`, `OrdersPage.tsx`, `AdminOrderPage.tsx`, `PublicOrderPage.tsx` | `orders_test.go` |
+| Historical import | `historical_orders.go` | `HistoricalOrderPage.tsx` | `historical_orders_test.go` |
+| Customer details and first receipt | `customer.go`, `images.go` | `PublicOrderPage.tsx`, `components.tsx` | `customer_test.go` |
+| Split/final payment | `installment_payments.go` | `AdminOrderPage.tsx`, `PublicOrderPage.tsx` | `installment_payments_test.go` |
+| Payment cards and IBAN | `payment_cards.go` | `AccountPage.tsx`, `PublicOrderPage.tsx` | `auth_test.go` |
+| Shop report | `reports.go` | `ReportPage.tsx` | `reports_test.go` |
+| Pilot events | `pilot_events.go` and callers | `shared.ts` and page callers | `pilot_events_test.go` |
+| Delivery dates | `orders.go`, `historical_orders.go` | `DeliveryDateSelect.tsx`, `shared.ts` | relevant order tests |
+| Data model | `models.go`, `migrations/*.sql` | domain types in `shared.ts` | `database_test.go` |
+
+Page components above are under `web/src/pages/`; shared frontend files are under `web/src/`. Use `CODEMAP.md` for flows, symbols, migrations, storage, and focused navigation anchors.
+
+## Explore Efficiently
+
+1. Locate the feature in the table and inspect its production file plus primary test.
+2. For HTTP work, confirm middleware/order in `main.go:newServer`; for UI routing, inspect `App.tsx` and `AdminApp.tsx`.
+3. Grep the handler, type, storage key, or status before editing to find all callers and coupled paths.
+4. Read only migrations touching the relevant columns; migrations, not GORM tags, own the schema.
+5. Run the narrowest relevant test first, then `make check` before finishing code changes.
 
 ## Commands
 
-- Required toolchain: Go 1.26, Node.js 24/npm, Docker, and Docker Compose. Install frontend dependencies with `npm --prefix web ci`.
-- Start development with `APP_ORIGIN=http://localhost:5173 make dev`. Plain `make dev` currently defaults to `http://192.168.1.121:8080`, despite the README claim; browser mutations from Vite will fail exact-origin checks.
-- Run the repository's complete verification in its defined order with `make check`: start PostgreSQL, run `go test ./...`, frontend typecheck, then frontend production build.
-- Focus a DB-backed test with `make db-up` then `go test . -run '^TestName$'`. Tests create and drop isolated PostgreSQL schemas, so `TEST_DATABASE_URL` must allow both operations.
-- A database-free focused check can run directly, for example `go test . -run '^TestNormalizeIranianMobile$'`.
-- Build and run production-style with `make run`. No frontend test, lint, formatter, or codegen command is configured.
+- Required: Go 1.26, Node.js 24/npm, Docker, Docker Compose. Install frontend dependencies with `npm --prefix web ci`.
+- Local Vite development: `APP_ORIGIN=http://localhost:5173 make dev`. Plain `make dev` currently defaults to `http://192.168.1.121:8080`, which fails exact-origin checks from localhost Vite.
+- Full verification: `make check` starts PostgreSQL, runs `go test ./...`, frontend typecheck, then frontend build.
+- Focused DB test: `make db-up`, then `go test . -run '^TestName$'`. Tests create/drop isolated PostgreSQL schemas; `TEST_DATABASE_URL` needs both permissions.
+- Database-free example: `go test . -run '^TestNormalizeIranianMobile$'`.
+- Production-style local run: `make run`. Release artifact: `make release`.
+- No frontend test, lint, formatter, or codegen command is configured.
 
-## Data And Migrations
+## Hard Invariants
 
-- PostgreSQL is mandatory; `DATABASE_URL` defaults to Compose on `localhost:5433`. Opening the database, including during tests and `seed`, automatically applies migrations embedded from `migrations/*.sql`.
-- Add forward-only migrations; production rollback keeps the previous app image, so schema changes must remain compatible with it. Do not replace schema work with GORM `AutoMigrate`.
-- `SEED_ADMIN_LOGIN=admin SEED_ADMIN_PASSWORD='replace-me' make seed` idempotently creates or updates only the admin. `SEED_ADMIN_NAME` is optional; shops and products are not seeded.
-- `DATA_DIR` defaults to `data`; receipts and product images live in its `receipts/` and `product-images/` directories. Treat both directories and PostgreSQL as one backup/restore set.
+- State-changing routes require request `Origin` to exactly equal `APP_ORIGIN`.
+- Admin order/product data and both receipt types must remain authenticated and shop-scoped. Public product images are intentional.
+- Order retry safety spans frontend session-storage `createKey` retention and backend request fingerprints. Preserve both normal and historical paths.
+- Customer submission requires exactly one JPEG/PNG/WebP receipt and atomically changes `waiting_info` to `waiting_payment`; upload never means `paid`.
+- Public order responses keep customer data masked and omit receipts, internal notes, conversation references, unit prices, and admin identity.
+- Payment settings are snapshotted onto orders; final-payment requests take a second snapshot. Product prices are snapshotted, but product names/images remain live.
+- `waiting_info` orders are cancelled 72 hours after creation at startup and hourly. Cleanup uses creation time, not time entering the status.
+- PostgreSQL, `DATA_DIR/receipts`, and `DATA_DIR/product-images` are one backup/restore set.
+- The operational UI is Persian, RTL, mobile-first, and centered near 480px; the landing page intentionally uses a wider responsive layout.
+- `IRANIAN_HOLIDAYS` in `web/src/shared.ts` is year-specific and must be updated when supporting a new Jalali year.
 
-## Invariants
+## Schema And Operations
 
-- State-changing routes require the request `Origin` to exactly equal `APP_ORIGIN`. Admin order/product data and receipt access must remain both authenticated and shop-scoped.
-- Order creation retry safety spans both sides: the frontend retains `createKey` in session storage until success, and the backend checks its request fingerprint. Preserve both parts.
-- Customer submission requires exactly one JPEG/PNG/WebP receipt and atomically moves `waiting_info` to `waiting_payment`. Public order responses keep customer data masked and omit internal notes/admin identity.
-- The operational UI is Persian, RTL, mobile-first, and centered at about 480px; the public landing page intentionally uses a wider responsive layout.
-- Executable code cancels `waiting_info` orders after 48 hours at startup and hourly. Product/planning documents that say seven days are stale.
-
-## Release
-
-- `make release` runs all checks, builds a Linux `amd64` image by default, and writes a tarball plus checksum under ignored `dist/`. Follow `DEPLOYMENT.md` for deployment, rollback, and coordinated database/upload backups.
+- PostgreSQL is mandatory. `DATABASE_URL` defaults to Compose on `localhost:5433`; opening the DB during server, tests, or seed automatically applies embedded migrations.
+- Add forward-only, previous-image-compatible migrations. Never use GORM `AutoMigrate`.
+- `SEED_ADMIN_LOGIN=admin SEED_ADMIN_PASSWORD='replace-me' make seed` idempotently creates or updates only an admin. `SEED_ADMIN_NAME` is optional; shops and assignments require manual provisioning.
+- Follow `DEPLOYMENT.md` for deployment, rollback, and coordinated database/media backups.

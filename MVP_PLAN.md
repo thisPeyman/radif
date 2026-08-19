@@ -1,5 +1,10 @@
 # ردیف MVP Implementation Plan
 
+> **Historical document.** This plan contains superseded architecture, routes,
+> and product behavior. Use `AGENTS.md` and `CODEMAP.md` for implementation
+> navigation, `PRODUCT.md` for current product intent, and code/tests as final
+> authority.
+
 ## 1. Goal
 
 Build a Persian, right-to-left, mobile-first pilot for Instagram shops that turns a confirmed DM sale into a trackable order.
