@@ -272,7 +272,14 @@ export default function PublicOrderPage() {
             <section className="mt-5 rounded-3xl border border-ledger bg-white p-5 shadow-sm">
               <div className="flex items-end justify-between gap-4 border-b border-ledger pb-4">
                 <div><p className="text-xs font-black text-teal">برنامه پرداخت</p><h2 className="mt-1 text-lg font-black">پرداخت در دو مرحله</h2></div>
-                <div className="text-left"><p className="text-xs font-bold text-ink/50">مبلغ کل</p><p className="mt-1 font-black">{persianNumber(order.amount)} تومان</p></div>
+                <div className="text-left">
+                  <p className="text-xs font-bold text-ink/50">مبلغ کل</p>
+                  {order.originalAmount ? <>
+                    <p className="mt-1 text-xs font-bold text-ink/45 line-through">{persianNumber(order.originalAmount)} تومان</p>
+                    <p className="mt-0.5 font-black text-teal">{persianNumber(order.amount)} تومان</p>
+                    <p className="mt-1 inline-block rounded-full bg-teal/10 px-2 py-0.5 text-[0.65rem] font-black text-teal">{persianNumber(order.originalAmount - order.amount)} تومان تخفیف</p>
+                  </> : <p className="mt-1 font-black">{persianNumber(order.amount)} تومان</p>}
+                </div>
               </div>
               <ol className="mt-5">
                 <li className="relative pr-12 pb-4">
@@ -321,19 +328,37 @@ export default function PublicOrderPage() {
             </section>
           ) : (
             <button
-              className="mt-5 flex w-full items-center justify-between gap-4 rounded-2xl border border-teal/15 bg-white px-4 py-3.5 text-ink shadow-sm transition hover:border-teal/30 hover:shadow-md active:scale-[0.99]"
+              className={`mt-5 flex w-full items-center justify-between gap-4 rounded-2xl border bg-white px-4 py-3.5 text-ink shadow-sm transition hover:border-teal/30 hover:shadow-md active:scale-[0.99] ${order.originalAmount ? "border-teal/30 bg-teal/5" : "border-teal/15"}`}
               type="button"
               onClick={copyPaymentAmount}
             >
-              <span className="text-right">
-                <span className="block text-xs font-bold text-ink/60">مبلغ سفارش</span>
-                <strong className="mt-1 block text-lg">{persianNumber(order.amount)} تومان</strong>
-                <span className="mt-0.5 block text-xs font-bold text-ink/45">{persianNumber(order.amount * 10)} ریال</span>
-              </span>
-              <span className="flex shrink-0 items-center gap-2 rounded-xl bg-teal/8 px-3 py-2 text-xs font-black text-teal">
-                {amountCopyState === "copied" ? <ClipboardCheck className="size-4" aria-hidden="true" /> : <Clipboard className="size-4" aria-hidden="true" />}
-                {amountCopyState === "copied" ? "کپی شد" : "کپی"}
-              </span>
+              {order.originalAmount ? (
+                <span className="w-full text-right">
+                  <span className="block text-xs font-bold text-ink/50">قیمت اصلی</span>
+                  <span className="mt-1 block text-sm font-bold text-ink/40 line-through">{persianNumber(order.originalAmount)} تومان</span>
+                  <span className="mt-3 block border-t border-dashed border-teal/25 pt-3">
+                    <span className="block text-xs font-bold text-teal">مبلغ قابل پرداخت</span>
+                    <strong className="mt-1 block text-lg text-teal">{persianNumber(order.amount)} تومان</strong>
+                  </span>
+                  <span className="mt-2 flex items-center justify-between text-xs font-black text-teal">
+                    <span>{persianNumber(order.amount * 10)} ریال</span>
+                    <span className="flex items-center gap-2">
+                      {amountCopyState === "copied" ? <ClipboardCheck className="size-4" aria-hidden="true" /> : <Clipboard className="size-4" aria-hidden="true" />}
+                      {amountCopyState === "copied" ? "کپی شد" : "کپی مبلغ"}
+                    </span>
+                  </span>
+                </span>
+              ) : <>
+                <span className="text-right">
+                  <span className="block text-xs font-bold text-ink/60">مبلغ سفارش</span>
+                  <strong className="mt-1 block text-lg">{persianNumber(order.amount)} تومان</strong>
+                  <span className="mt-0.5 block text-xs font-bold text-ink/45">{persianNumber(order.amount * 10)} ریال</span>
+                </span>
+                <span className="flex shrink-0 items-center gap-2 rounded-xl bg-teal/8 px-3 py-2 text-xs font-black text-teal">
+                  {amountCopyState === "copied" ? <ClipboardCheck className="size-4" aria-hidden="true" /> : <Clipboard className="size-4" aria-hidden="true" />}
+                  {amountCopyState === "copied" ? "کپی شد" : "کپی"}
+                </span>
+              </>}
             </button>
           )}
           {amountCopyState === "failed" && <p className="mt-2 text-sm text-error" role="alert">کپی خودکار ممکن نشد؛ دوباره تلاش کنید.</p>}

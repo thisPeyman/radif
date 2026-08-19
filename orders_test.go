@@ -95,7 +95,7 @@ func TestCreateOrderAndRecordCopy(t *testing.T) {
 	if err := db.First(&order, output.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if order.Status != waitingInfoStatus || order.EstimatedDeliveryDate != deliveryDate || order.SalesChannel != "whatsapp" || order.ConversationReference != "سارا ۰۹۱۲۳۴۵۶۷۸۹" || order.InternalNote != "test" || order.Amount != 1520000 || order.PaymentCardNumber != "6037991812345678" || order.PaymentIBAN != "IR820540102680020817909002" || order.PaymentInstructions != "به نام فروشگاه خانه آبی" {
+	if order.Status != waitingInfoStatus || order.EstimatedDeliveryDate != deliveryDate || order.SalesChannel != "whatsapp" || order.ConversationReference != "سارا ۰۹۱۲۳۴۵۶۷۸۹" || order.InternalNote != "test" || order.Amount != 1520000 || order.OriginalAmount != nil || order.PaymentCardNumber != "6037991812345678" || order.PaymentIBAN != "IR820540102680020817909002" || order.PaymentInstructions != "به نام فروشگاه خانه آبی" {
 		t.Fatalf("unexpected order: %#v", order)
 	}
 	if err := db.Model(&order).Update("sales_channel", "sms").Error; err == nil {
@@ -173,6 +173,43 @@ func TestCreateOrderAndRecordCopy(t *testing.T) {
 	}
 	if err := db.Model(&PilotEvent{}).Where("order_id = ? AND event_name = ?", order.ID, "order_link_copied").Count(&eventCount).Error; err != nil || eventCount != 1 {
 		t.Fatalf("copy event count = %d, error %v", eventCount, err)
+	}
+}
+
+func TestCreateOrderRecordsDiscountedOriginalAmount(t *testing.T) {
+	db, e, _, _ := newAuthTestServer(t)
+	cookie := loginCookie(t, e)
+	var product Product
+	if err := db.Order("id").First(&product).Error; err != nil {
+		t.Fatal(err)
+	}
+	deliveryDate := time.Now().AddDate(0, 0, 7).Format("2006-01-02")
+	body := fmt.Sprintf(`{"createKey":"discounted-order","shopId":%d,"items":[{"productId":%d,"quantity":1}],"amount":400000,"estimatedDeliveryDate":%q}`, product.ShopID, product.ID, deliveryDate)
+	response := request(e, http.MethodPost, "/api/orders", body, testOrigin, cookie)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("create returned %d: %s", response.Code, response.Body.String())
+	}
+	var created struct {
+		ID          uint   `json:"id"`
+		CustomerURL string `json:"customerUrl"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	var order Order
+	if err := db.First(&order, created.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if order.OriginalAmount == nil || *order.OriginalAmount != product.DefaultPrice {
+		t.Fatalf("original amount = %#v, want %d", order.OriginalAmount, product.DefaultPrice)
+	}
+	parsedURL, err := url.Parse(created.CustomerURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	publicResponse := request(e, http.MethodGet, "/api"+parsedURL.Path, "", "", nil)
+	if publicResponse.Code != http.StatusOK || !strings.Contains(publicResponse.Body.String(), fmt.Sprintf(`"originalAmount":%d`, product.DefaultPrice)) {
+		t.Fatalf("public order returned %d: %s", publicResponse.Code, publicResponse.Body.String())
 	}
 }
 

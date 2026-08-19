@@ -49,6 +49,7 @@ export default function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; on
   const [createKey, setCreateKey] = useState(() => newCreateKey(shop.id));
   const canShare = typeof navigator.share === "function";
   const deliveryDateHelp = workDays > 0 ? `${persianNumber(workDays)} روز کاری از امروز` : deliveryDate ? "" : "تاریخ وعده‌داده‌شده به مشتری را انتخاب کنید.";
+  const itemsTotal = items.reduce((sum, item) => sum + item.product.defaultPrice * item.quantity, 0);
 
   useEffect(() => () => onBusyChange(false), [onBusyChange]);
   useEffect(() => {
@@ -350,11 +351,14 @@ export default function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; on
 
         {items.length > 0 && <div className="creation-fields mt-7">
           <label className="block" htmlFor="amount">
-            <span className="mb-2 block text-sm font-black">مبلغ سفارش</span>
+            <span className="mb-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-sm font-black">
+              مبلغ نهایی سفارش
+              <span className="text-xs font-bold text-ink/50">قیمت محصول‌ها: {persianNumber(itemsTotal)} تومان</span>
+            </span>
             <span className="relative block">
               <input
                 id="amount"
-                className="field pl-20 text-lg font-black"
+                className={`field pl-20 text-lg font-black ${Number(amount) > 0 && Number(amount) < itemsTotal ? "border-teal! bg-teal/5!" : ""}`}
                 inputMode="numeric"
                 value={amountFocused ? amount.replace(/\d/g, (digit) => persianDigits[Number(digit)]) : persianNumber(amount)}
                 onFocus={() => setAmountFocused(true)}
@@ -364,13 +368,18 @@ export default function CreateOrderPage({ shop, onBusyChange }: { shop: Shop; on
                   setAmount(value);
                   if (splitPayment) setInitialPaymentAmount(halfAmount(Number(value)));
                 }}
-                aria-describedby={amountError ? "amount-unit amount-error" : "amount-unit"}
+                aria-describedby={amountError ? "amount-unit amount-help amount-error" : "amount-unit amount-help"}
                 aria-invalid={Boolean(amountError)}
                 required
               />
               <span id="amount-unit" className="pointer-events-none absolute inset-y-0 left-4 flex items-center text-sm font-bold text-ink/70">تومان</span>
             </span>
             {amountError && <span id="amount-error" className="mt-2 block text-sm font-bold text-error" role="alert">{amountError}</span>}
+            <span id="amount-help" className={`mt-2 flex min-h-7 items-center text-xs font-bold ${Number(amount) > 0 && Number(amount) < itemsTotal ? "text-teal" : "text-ink/55"}`}>
+              {Number(amount) > 0 && Number(amount) < itemsTotal
+                ? <span className="rounded-full bg-teal/10 px-3 py-1">{persianNumber(itemsTotal - Number(amount))} تومان تخفیف اعمال شد</span>
+                : "برای اعمال تخفیف، مبلغ نهایی را کمتر کنید."}
+            </span>
           </label>
           <div className="mt-5 rounded-3xl border border-teal/20 bg-white p-4 shadow-sm">
             <label className="flex min-h-12 cursor-pointer items-center justify-between gap-4" htmlFor="split-payment">

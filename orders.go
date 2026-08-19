@@ -178,6 +178,21 @@ func createOrder(db *gorm.DB, cfg config) echo.HandlerFunc {
 			if len(products) != len(input.Items) {
 				return echo.NewHTTPError(http.StatusNotFound, "محصول پیدا نشد.")
 			}
+			originalAmount := int64(0)
+			for _, product := range products {
+				quantity := int64(inputQuantities[product.ID])
+				if product.DefaultPrice > (1<<63-1)/quantity {
+					return echo.NewHTTPError(http.StatusBadRequest, "مبلغ محصولات معتبر نیست.")
+				}
+				itemAmount := product.DefaultPrice * quantity
+				if originalAmount > (1<<63-1)-itemAmount {
+					return echo.NewHTTPError(http.StatusBadRequest, "مبلغ محصولات معتبر نیست.")
+				}
+				originalAmount += itemAmount
+			}
+			if input.Amount < originalAmount {
+				order.OriginalAmount = &originalAmount
+			}
 			result := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "create_key"}}, DoNothing: true}).Create(&order)
 			if result.Error != nil {
 				return result.Error
@@ -850,6 +865,9 @@ func publicOrderResponse(c echo.Context, status int, order Order) error {
 		"finalPaymentRequested":     order.FinalPaymentRequestedAt != nil,
 		"finalReceiptUploaded":      order.FinalReceiptFilePath != "",
 		"finalPaymentConfirmed":     order.FinalPaymentConfirmedAt != nil,
+	}
+	if order.OriginalAmount != nil {
+		response["originalAmount"] = *order.OriginalAmount
 	}
 	if order.InitialPaymentAmount != nil {
 		response["initialPaymentAmount"] = *order.InitialPaymentAmount

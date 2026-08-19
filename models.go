@@ -79,6 +79,7 @@ type Order struct {
 	Items                          []OrderItem
 	History                        []OrderStatusHistory
 	Amount                         int64 `gorm:"not null"`
+	OriginalAmount                 *int64
 	InitialPaymentAmount           *int64
 	EstimatedDeliveryDate          string `gorm:"not null"`
 	SalesChannel                   string `gorm:"not null;default:instagram"`

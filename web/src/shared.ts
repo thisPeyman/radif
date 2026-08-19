@@ -73,6 +73,7 @@ export type PublicOrder = {
   shop: { name: string; logoPath?: string };
   items: { name: string; imagePath: string; quantity: number }[];
   amount: number;
+  originalAmount?: number;
   initialPaymentAmount?: number;
   finalPaymentAmount?: number;
   status: string;
