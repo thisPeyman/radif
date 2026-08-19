@@ -22,7 +22,7 @@ import (
 const (
 	waitingInfoStatus    = "waiting_info"
 	waitingPaymentStatus = "waiting_payment"
-	staleWaitingInfoAge  = 2 * 24 * time.Hour
+	staleWaitingInfoAge  = 3 * 24 * time.Hour
 )
 
 var validOrderStatuses = map[string]bool{
