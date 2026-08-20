@@ -19,7 +19,7 @@
 | Area | Backend | Frontend | Primary test |
 | --- | --- | --- | --- |
 | Startup, routes, config, DB | `main.go`, `config.go`, `database.go` | `App.tsx`, `AdminApp.tsx`, `shared.ts` | `main_test.go`, `database_test.go` |
-| Login, sessions, shop access/support | `auth.go` | `LoginPage.tsx`, `AccountPage.tsx` | `auth_test.go` |
+| Login, sessions, trials, shop access/support | `auth.go`, `password_auth.go`, `signup.go`, `subscriptions.go` | `LoginPage.tsx`, `AccountPage.tsx`, `AdminApp.tsx` | `auth_test.go` |
 | Products and images | `products.go`, `images.go` | `ProductsPage.tsx`, `ProductFormPage.tsx`, `components.tsx` | `products_test.go` |
 | Order create/list/admin/public | `orders.go` | `CreateOrderPage.tsx`, `OrdersPage.tsx`, `AdminOrderPage.tsx`, `PublicOrderPage.tsx` | `orders_test.go` |
 | Historical import | `historical_orders.go` | `HistoricalOrderPage.tsx` | `historical_orders_test.go` |
@@ -44,7 +44,7 @@ Page components above are under `web/src/pages/`; shared frontend files are unde
 ## Commands
 
 - Required: Go 1.26, Node.js 24/npm, Docker, Docker Compose. Install frontend dependencies with `npm --prefix web ci`.
-- Local Vite development: `APP_ORIGIN=http://localhost:5173 make dev`. Plain `make dev` currently defaults to `http://192.168.1.121:8080`, which fails exact-origin checks from localhost Vite.
+- Local Vite development: `APP_ORIGIN=http://localhost:5173 make dev`. Plain `make dev` currently defaults to `http://192.168.1.121:8080`, which fails exact-origin checks from localhost Vite. Use `DEV_OTP_CODE=123456` to exercise the OTP flow without SMS delivery.
 - Full verification: `make check` starts PostgreSQL, runs `go test ./...`, frontend typecheck, then frontend build.
 - Focused DB test: `make db-up`, then `go test . -run '^TestName$'`. Tests create/drop isolated PostgreSQL schemas; `TEST_DATABASE_URL` needs both permissions.
 - Database-free example: `go test . -run '^TestNormalizeIranianMobile$'`.
@@ -59,6 +59,7 @@ Page components above are under `web/src/pages/`; shared frontend files are unde
 - Customer submission requires exactly one JPEG/PNG/WebP receipt and atomically changes `waiting_info` to `waiting_payment`; upload never means `paid`.
 - Public order responses keep customer data masked and omit receipts, internal notes, conversation references, unit prices, and admin identity.
 - Payment settings are snapshotted onto orders; final-payment requests take a second snapshot. Product prices are snapshotted, but product names/images remain live.
+- Expired shops retain private reads and public customer links, but every private mutation must pass the shared active-subscription guard.
 - `waiting_info` orders are cancelled 72 hours after creation at startup and hourly. Cleanup uses creation time, not time entering the status.
 - PostgreSQL, `DATA_DIR/receipts`, and `DATA_DIR/product-images` are one backup/restore set.
 - The operational UI is Persian, RTL, mobile-first, and centered near 480px; the landing page intentionally uses a wider responsive layout.

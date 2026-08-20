@@ -7,10 +7,13 @@ Use this document after `AGENTS.md` when a task crosses files or the owning code
 | File | Responsibility and useful symbols |
 | --- | --- |
 | `main.go` | Process lifecycle, cleanup scheduler, route registration, security/static middleware, API errors. Start at `run`, `newServer`, `startStaleOrderCancellation`. |
-| `config.go` | Environment defaults and upload paths. Start at `loadConfig`, `dataDir`. |
+| `config.go` | Environment defaults, media paths, Melipayamak SMS, and `DEV_OTP_CODE` local OTP bypass. Start at `loadConfig`, `dataDir`. |
 | `database.go` | PostgreSQL pool and embedded Goose migration startup. Start at `openDatabase`, `migrationFiles`. |
 | `models.go` | GORM representations of all persisted records. SQL migrations remain schema authority. |
-| `auth.go` | Login/logout, sessions, `/api/me`, shop support settings, authentication, shop scope, exact-origin middleware. |
+| `auth.go` | Sessions, `/api/me`, shop support/logo settings, authentication, shop scope, exact-origin middleware. |
+| `password_auth.go` | Password-first public identification/login, signup and reset OTP challenges, SMS delivery, and limits. |
+| `signup.go` | Iranian mobile/code validation and atomic first-shop/trial creation. |
+| `subscriptions.go` | Tehran-calendar subscription state and inactive-shop mutation guards. |
 | `seed.go` | Idempotent single-admin create/update from `SEED_ADMIN_*`; no shop or product seeding. |
 | `orders.go` | Normal creation/idempotency, list/search/sort, admin updates, public/admin responses, receipts, link rotation, cleanup. |
 | `historical_orders.go` | Multipart import of existing orders and import retry fingerprint. |
@@ -28,20 +31,20 @@ Use this document after `AGENTS.md` when a task crosses files or the owning code
 | --- | --- |
 | `web/src/main.tsx` | React root, router, global CSS, service-worker registration. |
 | `web/src/App.tsx` | Public/auth split, `/api/me` session bootstrap, unauthorized event handling, top-level lazy routes. |
-| `web/src/AdminApp.tsx` | Authenticated shell, shop persistence/switching, bottom navigation, install prompt, admin routes. |
+| `web/src/AdminApp.tsx` | Authenticated shell, shop persistence/switching, trial/activation notices, read-only guard, bottom navigation, install prompt, admin routes. |
 | `web/src/shared.ts` | Domain types, `api`, `ApiError`, telemetry, labels, formatting, persistence helpers, working-day calculations, sharing, random IDs. |
 | `web/src/components.tsx` | Shared UI, product choices, copying, receipt picker and client-side receipt optimization. |
 | `web/src/DeliveryDateSelect.tsx` | Persian date picker, past-date option for imports, working-day shortcuts. |
 | `web/src/pages/LandingPage.tsx` | Public marketing/pilot landing page. |
-| `web/src/pages/LoginPage.tsx` | Cookie-session login. |
+| `web/src/pages/LoginPage.tsx` | Public mobile/legacy-username identification, password login, OTP signup/reset, and first-shop form. |
 | `web/src/pages/CreateOrderPage.tsx` | Normal order creation, product quantities, split amount, retry key, sharing result. |
 | `web/src/pages/HistoricalOrderPage.tsx` | Existing-order import, customer/status/receipt entry, review and separate retry key. |
 | `web/src/pages/OrdersPage.tsx` | Active/archive/search views, URL filters/sorts, progressive 20-item pagination. |
 | `web/src/pages/AdminOrderPage.tsx` | Full private record, corrections, statuses, receipts, link rotation, split-payment actions, history. |
 | `web/src/pages/PublicOrderPage.tsx` | Token-based customer details/receipt flow, masked status view, final receipt, support. |
 | `web/src/pages/ProductsPage.tsx` | Active/archive product list and lifecycle actions. |
-| `web/src/pages/ProductFormPage.tsx` | Product create/edit and square WebP crop. |
-| `web/src/pages/AccountPage.tsx` | Admin identity, payment cards/IBAN, active card, support contacts, share template, logout. |
+| `web/src/pages/ProductFormPage.tsx` | Product create/edit and reusable square WebP image cropper. |
+| `web/src/pages/AccountPage.tsx` | Admin identity, shop logo crop/upload, payment cards/IBAN, active card, support contacts, share template, logout. |
 | `web/src/pages/ReportPage.tsx` | Status-derived shop totals and top products. |
 | `web/src/styles.css` | Tailwind import, theme tokens, operational 480px shell, wider landing layout, component CSS. |
 
@@ -51,7 +54,8 @@ Use this document after `AGENTS.md` when a task crosses files or the owning code
 
 | Route family | Handler owner | UI owner |
 | --- | --- | --- |
-| `/api/session`, `/api/me` | `auth.go` | `App.tsx`, `LoginPage.tsx`, `AdminApp.tsx` |
+| `/api/auth/*`, `/api/session`, `/api/me` | `password_auth.go`, `auth.go` | `App.tsx`, `LoginPage.tsx`, `AdminApp.tsx` |
+| `POST /api/shops`, `/api/shops/:shopID/logo` | `signup.go`, `auth.go` | `LoginPage.tsx`, `AccountPage.tsx` |
 | `/api/shops/:shopID/products*`, `/api/product-images/*` | `products.go`, `images.go` | product pages and `components.tsx` |
 | `/api/orders`, `/api/orders/:orderID*` | `orders.go` | create, list, and admin order pages |
 | `/api/orders/import` | `historical_orders.go` | `HistoricalOrderPage.tsx` |
@@ -75,6 +79,17 @@ main -> run -> loadConfig -> openDatabase -> embedded Goose migrations
 ```
 
 The `seed` subcommand opens/migrates the same database, calls `seed`, and exits.
+
+### Public Authentication And Trial
+
+```text
+LoginPage identifier -> known mobile/legacy username: password login
+                     -> unknown mobile: signup OTP -> password -> session
+                     -> mobile reset: reset OTP -> new password -> session
+first mobile account without a shop -> POST /api/shops -> owner, active card, 14-day trial
+```
+
+`DEV_OTP_CODE` skips SMS delivery locally while preserving OTP challenge checks. Password-only legacy usernames have no reset route. `requireActiveShop` blocks private mutations for expired shops; authenticated reads and public customer links remain available.
 
 ### Normal Order Creation
 
@@ -129,6 +144,7 @@ Final-payment state is parallel to fulfillment status; confirmation does not cha
 - Structured data is PostgreSQL through GORM; there is no storage abstraction layer.
 - Receipts use `DATA_DIR/receipts`; the database stores generated basenames only.
 - Product images use `DATA_DIR/product-images`; the database stores public `/api/product-images/<file>` paths.
+- Shop logos use the same managed image directory and public image route as product images.
 - Initial and final receipts are authenticated, shop-scoped, and served with `no-store`; product images are public and immutable-cached.
 - Order items freeze unit price. Product name/image remain live associations.
 - Orders freeze payment details at creation/import. Final-payment requests freeze another payment profile for the remainder.
@@ -148,6 +164,8 @@ Final-payment state is parallel to fulfillment status; confirmation does not cha
 | `00007_order_sales_channel.sql` | Sales channel and conversation reference. |
 | `00008_pilot_event_context.sql` | Event shop/key context and deduplication indexes. |
 | `00009_payment_card_iban.sql` | Optional IBAN fields on shops, cards, and payment snapshots. |
+| `00010_order_discount.sql` | Original pre-discount order amount. |
+| `00011_self_service_trials.sql` | Admin mobile login, purpose-scoped OTP challenges, first-shop trials, paid-through dates, and subscription mode. |
 
 Migrations are forward-only and must remain compatible with the previous application image. The database does not constrain order status values; application validation is required.
 
@@ -157,7 +175,7 @@ Migrations are forward-only and must remain compatible with the previous applica
 | --- | --- |
 | `database_test.go` | Isolated schema helper, migrations, schema relations, repeatable seed. |
 | `main_test.go` | Health, routing, SPA/PWA cache behavior. |
-| `auth_test.go` | Session lifecycle, throttle, shop assignment, support, cards, IBAN. |
+| `auth_test.go` | Sessions, password/OTP auth, first-shop trials, support/logo upload, cards, IBAN. |
 | `products_test.go` | Product/image lifecycle, validation, ownership, cleanup and caching. |
 | `orders_test.go` | Creation/idempotency, snapshots, privacy, list/search/sort, updates, cleanup, receipts. |
 | `historical_orders_test.go` | Import, fingerprint/retries, past dates, receipt and ownership rules. |
@@ -186,6 +204,7 @@ Authentication stays in the HTTP-only server session cookie; no auth token or pa
 ```text
 Startup/routes:   run|newServer|apiErrorHandler|startStaleOrderCancellation
 Security/scope:   requireAdmin|requireShopAccess|requireOrigin|findAdminOrder|JOIN admin_shops
+Auth/trials:      identifyAccount|passwordLogin|signupVerify|createSelfServiceShop|requireActiveShop
 Creation/retry:   createOrder|importHistoricalOrder|createKey|CreateFingerprint|create_key
 Statuses:         validOrderStatuses|waitingInfoStatus|waitingPaymentStatus|cancelStaleWaitingInfoOrders
 Public privacy:   publicOrderResponse|adminOrderResponse|customerSummary|serveReceipt
@@ -205,6 +224,7 @@ Schema:           CREATE TABLE|ALTER TABLE|CONSTRAINT|CREATE UNIQUE INDEX
 - `GET` order/list/public handlers perform nonfatal analytics writes; do not let passive observation failures break reads.
 - Some core pilot events are inside write transactions and therefore can roll back the business write on event insertion failure.
 - `me` hides inactive shops and create/import reject them, but existing-record management generally does not require active shops.
+- Expired shops keep authenticated reads and public customer links; private mutations return payment-required and the shell is read-only apart from logout.
 - Customer links never expire and customer/media records have no automatic retention policy.
 - Product upload rename plus DB transaction is best-effort atomic; a process crash can orphan a file.
 - Frontend verification is typecheck/build only; there is no test, lint, formatter, or E2E configuration.
