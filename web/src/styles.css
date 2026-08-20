@@ -70,6 +70,7 @@ button:disabled {
 
 .landing-header,
 .landing-hero,
+.landing-trust,
 .landing-section,
 .landing-footer {
   width: min(100%, 1120px);
@@ -83,6 +84,7 @@ button:disabled {
   justify-content: space-between;
   gap: 1.5rem;
   padding-block: max(1.25rem, env(safe-area-inset-top)) 1.25rem;
+  border-bottom: 1px solid rgb(24 59 78 / 8%);
 }
 
 .landing-brand {
@@ -102,13 +104,19 @@ button:disabled {
   font-size: 0.875rem;
   font-weight: 900;
   text-decoration: none;
+  transition: border-color 150ms ease, background-color 150ms ease;
+}
+
+.landing-login:hover {
+  border-color: #287266;
+  background: #e4eef0;
 }
 
 .landing-hero {
   display: grid;
   align-items: center;
-  gap: 3rem;
-  padding-block: clamp(3rem, 8vw, 6.5rem);
+  gap: clamp(2.75rem, 7vw, 6rem);
+  padding-block: clamp(3.5rem, 7vw, 6rem);
 }
 
 .landing-eyebrow {
@@ -119,9 +127,9 @@ button:disabled {
 }
 
 .landing-hero h1 {
-  max-width: 12ch;
+  max-width: 13ch;
   margin-top: 0.75rem;
-  font-size: clamp(2.6rem, 9vw, 5.25rem);
+  font-size: clamp(2.65rem, 7vw, 4.8rem);
   font-weight: 950;
   line-height: 1.3;
   letter-spacing: -0.055em;
@@ -137,7 +145,7 @@ button:disabled {
 }
 
 .landing-lead {
-  max-width: 39rem;
+  max-width: 35rem;
   margin-top: 1.5rem;
   color: rgb(24 59 78 / 76%);
   font-size: clamp(1rem, 2vw, 1.15rem);
@@ -166,6 +174,12 @@ button:disabled {
   font-weight: 900;
   text-decoration: none;
   box-shadow: 0 8px 24px rgb(24 59 78 / 12%);
+  transition: transform 150ms ease, box-shadow 150ms ease;
+}
+
+.landing-pilot-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px rgb(24 59 78 / 18%);
 }
 
 .landing-pilot-button:disabled {
@@ -189,6 +203,7 @@ button:disabled {
   margin-top: 0.75rem;
   color: rgb(24 59 78 / 62%);
   font-size: 0.75rem;
+  line-height: 1.8;
 }
 
 .landing-ledger {
@@ -196,12 +211,12 @@ button:disabled {
   width: min(100%, 30rem);
   margin-inline: auto;
   overflow: hidden;
-  border-radius: 2rem;
+  border-radius: 2rem 2rem 0.65rem 0.65rem;
   background-color: #183b4e;
   background-image: linear-gradient(rgb(228 238 240 / 6%) 1px, transparent 1px);
   background-size: 100% 2.5rem;
   padding: clamp(1rem, 4vw, 1.75rem);
-  box-shadow: 0 28px 65px rgb(3 20 29 / 26%);
+  box-shadow: 0 30px 70px rgb(3 20 29 / 24%);
 }
 
 .landing-ledger::after {
@@ -225,13 +240,34 @@ button:disabled {
   width: 88%;
   align-items: center;
   gap: 0.65rem;
-  margin: 1.5rem 0 1.25rem auto;
+  margin: 1.5rem 0 1rem auto;
   border-radius: 1.2rem 1.2rem 0.3rem 1.2rem;
   background: #e9a928;
   padding: 0.85rem 1rem;
   font-size: 0.8rem;
   font-weight: 900;
   line-height: 1.7;
+}
+
+.landing-handoff {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 1rem 1rem 0;
+  color: rgb(228 238 240 / 72%);
+  font-size: 0.68rem;
+  font-weight: 900;
+}
+
+.landing-handoff::before {
+  width: 2.25rem;
+  height: 1px;
+  background: rgb(228 238 240 / 28%);
+  content: "";
+}
+
+.landing-handoff svg {
+  width: 0.9rem;
 }
 
 .landing-slip {
@@ -241,18 +277,18 @@ button:disabled {
   gap: 0.75rem;
   margin-top: 0.75rem;
   border-right: 5px solid;
-  border-radius: 1.25rem 0.35rem 0.35rem 1.25rem;
+  border-radius: 1.25rem 0.3rem 0.3rem 1.25rem;
   background: #fff;
   padding: 0.85rem;
   box-shadow: 0 10px 24px rgb(3 20 29 / 18%);
   animation: landing-slip-in 500ms cubic-bezier(.2, .8, .2, 1) both;
 }
 
-.landing-slip:nth-of-type(4) {
+.landing-slip:nth-of-type(5) {
   animation-delay: 100ms;
 }
 
-.landing-slip:nth-of-type(5) {
+.landing-slip:nth-of-type(6) {
   animation-delay: 200ms;
 }
 
@@ -310,6 +346,41 @@ button:disabled {
   white-space: nowrap;
 }
 
+.landing-trust {
+  display: grid;
+  border-block: 1px solid #d5e2e4;
+  padding-block: 1.5rem;
+}
+
+.landing-trust p {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.15rem 0.65rem;
+  padding-block: 0.75rem;
+}
+
+.landing-trust svg {
+  grid-row: 1 / 3;
+  width: 1.35rem;
+  color: #287266;
+}
+
+.landing-trust strong,
+.landing-trust span {
+  display: block;
+}
+
+.landing-trust strong {
+  font-size: 0.85rem;
+  font-weight: 950;
+}
+
+.landing-trust span {
+  color: rgb(24 59 78 / 62%);
+  font-size: 0.7rem;
+}
+
 .landing-section {
   padding-block: clamp(4rem, 8vw, 7rem);
 }
@@ -335,7 +406,7 @@ button:disabled {
 }
 
 .landing-process {
-  border-block: 1px solid #d5e2e4;
+  background: #fff;
 }
 
 .landing-steps {
@@ -393,7 +464,9 @@ button:disabled {
 .landing-order-preview {
   width: min(100%, 30rem);
   margin-inline: auto;
-  border: 1px solid #d2dfe1;
+  overflow: hidden;
+  border: 1px solid #c7d8db;
+  border-radius: 1.5rem;
   background: #f7f9f8;
   box-shadow: 0 24px 55px rgb(24 59 78 / 16%);
 }
@@ -576,12 +649,22 @@ button:disabled {
   max-width: 15ch;
 }
 
+.landing-cta > div > p:last-child {
+  max-width: 40rem;
+  margin-top: 0.75rem;
+  color: rgb(247 249 248 / 68%);
+  font-size: 0.9rem;
+  line-height: 1.9;
+}
+
 .landing-client-proof {
   display: flex;
   max-width: 42rem;
   align-items: center;
   gap: 1rem;
-  margin-top: 1.5rem;
+  margin-top: 2rem;
+  border-top: 1px solid #d5e2e4;
+  padding-top: 1.5rem;
 }
 
 .landing-client-logo {
@@ -589,7 +672,7 @@ button:disabled {
   width: 3.5rem;
   height: 3.5rem;
   flex-shrink: 0;
-  border: 1px solid rgb(247 249 248 / 35%);
+  border: 1px solid #cbdadd;
   border-radius: 1rem;
   object-fit: cover;
 }
@@ -605,7 +688,7 @@ button:disabled {
 
 .landing-client-proof p > span {
   margin-top: 0.35rem;
-  color: rgb(247 249 248 / 70%);
+  color: rgb(24 59 78 / 65%);
   font-size: 0.8rem;
   line-height: 1.8;
 }
@@ -661,12 +744,90 @@ button:disabled {
     grid-template-columns: repeat(3, 1fr);
   }
 
+  .landing-trust {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .landing-trust p {
+    padding: 0 1.5rem;
+  }
+
+  .landing-trust p + p {
+    border-right: 1px solid #d5e2e4;
+  }
+
   .landing-proof {
     grid-template-columns: minmax(22rem, 0.9fr) minmax(0, 1.1fr);
   }
 
   .landing-cta {
     grid-template-columns: minmax(0, 1fr) auto;
+  }
+}
+
+@media (max-width: 799px) {
+  .landing-header .landing-brand > div > div {
+    display: none;
+  }
+
+  .landing-header .landing-brand img {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+
+  .landing-hero-copy {
+    text-align: center;
+  }
+
+  .landing-hero h1,
+  .landing-lead {
+    margin-inline: auto;
+  }
+
+  .landing-actions {
+    justify-content: center;
+  }
+
+  .landing-trust p + p {
+    border-top: 1px solid #d5e2e4;
+  }
+
+  .landing-footer {
+    align-items: start;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 420px) {
+  .landing-actions {
+    display: grid;
+  }
+
+  .landing-pilot-button {
+    width: 100%;
+  }
+
+  .landing-message {
+    width: 94%;
+  }
+
+  .landing-slip {
+    gap: 0.55rem;
+  }
+
+  .landing-slip-icon {
+    width: 2.35rem;
+    height: 2.35rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-slip {
+    animation: none;
+  }
+
+  .landing-pilot-button {
+    transition: none;
   }
 }
 
