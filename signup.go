@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -37,26 +36,21 @@ func sendOTP(cfg config, mobile, code string) error {
 	if cfg.melipayamakUsername == "" || cfg.melipayamakPassword == "" || cfg.melipayamakBodyID == "" {
 		return echo.NewHTTPError(http.StatusServiceUnavailable, "ارسال پیامک هنوز پیکربندی نشده است.")
 	}
-	fmt.Println("here")
 	body, _ := json.Marshal(map[string]string{"username": cfg.melipayamakUsername, "password": cfg.melipayamakPassword, "to": "98" + mobile[1:], "bodyId": cfg.melipayamakBodyID, "text": code})
 	req, err := http.NewRequest(http.MethodPost, melipayamakBaseServiceURL, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
-	fmt.Println("here2")
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 	response, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadGateway, "ارسال پیامک انجام نشد. دوباره تلاش کنید.")
 	}
 	defer response.Body.Close()
-	fmt.Println("here3")
 	io.Copy(io.Discard, response.Body)
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		fmt.Println("here5")
 		return echo.NewHTTPError(http.StatusBadGateway, "ارسال پیامک انجام نشد. دوباره تلاش کنید.")
 	}
-	fmt.Println("here4")
 	return nil
 }
 
