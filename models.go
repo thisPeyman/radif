@@ -7,7 +7,8 @@ type Admin struct {
 	Name         string `gorm:"not null"`
 	Login        string `gorm:"not null;uniqueIndex"`
 	PasswordHash string `gorm:"not null"`
-	Active       bool   `gorm:"not null"`
+	Mobile       string
+	Active       bool `gorm:"not null"`
 	CreatedAt    time.Time
 }
 
@@ -39,8 +40,23 @@ type Shop struct {
 	ShareMessageTemplate string `gorm:"not null"`
 	PaymentCards         []ShopPaymentCard
 	Active               bool `gorm:"not null;index"`
+	TrialEndsAt          *time.Time
+	PaidThrough          *time.Time `gorm:"type:date"`
+	SubscriptionMode     string     `gorm:"not null"`
 	CreatedAt            time.Time
 	UpdatedAt            time.Time
+}
+
+type OTPChallenge struct {
+	ID            uint      `gorm:"primaryKey"`
+	Mobile        string    `gorm:"not null;index"`
+	Purpose       string    `gorm:"not null"`
+	CodeHash      string    `gorm:"not null"`
+	ExpiresAt     time.Time `gorm:"not null"`
+	SentAt        time.Time `gorm:"not null"`
+	Attempts      int       `gorm:"not null"`
+	InvalidatedAt *time.Time
+	CreatedAt     time.Time
 }
 
 type ShopPaymentCard struct {

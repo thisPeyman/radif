@@ -86,9 +86,20 @@ APP_UID=1000
 APP_GID=1000
 SESSION_LIFETIME=720h
 MAX_RECEIPT_BYTES=5242880
+MELIPAYAMAK_USERNAME=your-panel-username
+MELIPAYAMAK_PASSWORD=your-panel-password
+MELIPAYAMAK_BODY_ID=your-template-body-id
 ```
 
 Use the actual server IP and the values returned by `id`. Keep `.env` mode `0600` and never commit or upload it elsewhere.
+
+## Activate a paid shop
+
+After confirming payment in WhatsApp, set an inclusive Tehran-calendar date directly in PostgreSQL (for example, through `docker compose exec db psql`):
+
+```sql
+UPDATE shops SET paid_through = DATE '2026-09-20', subscription_mode = 'paid' WHERE id = 123;
+```
 
 ## First deployment
 

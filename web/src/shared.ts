@@ -10,6 +10,10 @@ export type Shop = {
   supportChannel?: "instagram" | "whatsapp";
   shareMessageTemplate?: string;
   paymentCards: PaymentCard[];
+  subscriptionState: "trial" | "paid" | "inactive";
+  trialEndsAt?: string;
+  paidThrough?: string;
+  trialDaysRemaining?: number;
 };
 
 export type PaymentCard = {
@@ -31,7 +35,7 @@ export const salesChannelLabels: Record<SalesChannel, string> = {
 };
 
 export type Me = {
-  admin: { id: number; name: string; login: string };
+  admin: { id: number; name: string; login: string; mobile?: string };
   shops: Shop[];
 };
 
@@ -211,7 +215,7 @@ const tehranDateFormat = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Tehr
 const latinDigits = "0123456789";
 export const persianDigits = "۰۱۲۳۴۵۶۷۸۹";
 
-export const defaultShareMessageTemplate = "سلام، سفارش شما در فروشگاه {shopName} با کد {orderCode} ثبت شد.\n\nلطفاً برای تکمیل اطلاعات سفارش و ارسال رسید پرداخت، از لینک زیر استفاده کنید:\n{customerUrl}";
+export const defaultShareMessageTemplate = "مرسی که {shopName} رو انتخاب کردین 🤍\nسفارش شما با کد {orderCode} ثبت شد ✨\n\nبرای مشاهده جزئیات سفارش و پرداخت مبلغ {amount}، از لینک زیر وارد صفحه سفارشتون بشین 👇\n{customerUrl}\n\nاطلاعات پرداخت داخل همون صفحه در دسترستونه و بعد از واریز می‌تونین تصویر رسید پرداخت رو هم همون‌جا ارسال کنین.\n\nاز همین لینک می‌تونین وضعیت سفارش و مراحل آماده‌سازی و ارسال رو هم پیگیری کنین 🌿\n\nزمان تقریبی تحویل: {deliveryDate}\n\nمرسی از اعتمادتون 🤍";
 export const emptyCustomerDraft: CustomerDraft = { fullName: "", mobile: "", address: "", postalCode: "", note: "" };
 export const publicStatusLabels: Record<string, string> = {
   waiting_info: "در انتظار اطلاعات شما",
@@ -280,7 +284,8 @@ export function todayISO() {
 }
 
 export function persianDate(value: string) {
-  return value ? dateFormat.format(new Date(`${value}T12:00:00Z`)) : "";
+  const date = new Date(value.includes("T") ? value : `${value}T12:00:00Z`);
+  return Number.isNaN(date.getTime()) ? "" : dateFormat.format(date);
 }
 
 export function orderShareMessage(

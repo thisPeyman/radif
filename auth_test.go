@@ -1,16 +1,21 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/labstack/echo/v4"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
@@ -87,6 +92,62 @@ func loginCookie(t *testing.T, e *echo.Echo) *http.Cookie {
 	return nil
 }
 
+func logoRequest(e *echo.Echo, path string, image []byte, origin string, cookie *http.Cookie) *httptest.ResponseRecorder {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if image != nil {
+		file, _ := writer.CreateFormFile("image", "logo.png")
+		_, _ = file.Write(image)
+	}
+	_ = writer.Close()
+	req := httptest.NewRequest(http.MethodPatch, path, &body)
+	req.Header.Set(echo.HeaderContentType, writer.FormDataContentType())
+	if origin != "" {
+		req.Header.Set(echo.HeaderOrigin, origin)
+	}
+	if cookie != nil {
+		req.AddCookie(cookie)
+	}
+	recorder := httptest.NewRecorder()
+	e.ServeHTTP(recorder, req)
+	return recorder
+}
+
+func TestShopLogoUpload(t *testing.T) {
+	db, e, cfg, _ := newAuthTestServer(t)
+	cookie := loginCookie(t, e)
+	var shop Shop
+	if err := db.First(&shop).Error; err != nil {
+		t.Fatal(err)
+	}
+	path := "/api/shops/" + strconv.FormatUint(uint64(shop.ID), 10) + "/logo"
+	png := validProductPNG(t)
+	if response := logoRequest(e, path, nil, testOrigin, cookie); response.Code != http.StatusBadRequest {
+		t.Fatalf("missing logo returned %d", response.Code)
+	}
+	if response := logoRequest(e, path, png, "", cookie); response.Code != http.StatusForbidden {
+		t.Fatalf("missing origin returned %d", response.Code)
+	}
+	first := logoRequest(e, path, png, testOrigin, cookie)
+	if first.Code != http.StatusOK {
+		t.Fatalf("logo upload returned %d: %s", first.Code, first.Body.String())
+	}
+	var result struct{ LogoPath string }
+	if err := json.Unmarshal(first.Body.Bytes(), &result); err != nil || !strings.HasPrefix(result.LogoPath, productImageURLPrefix) {
+		t.Fatalf("unexpected logo response: %#v, %v", result, err)
+	}
+	oldName := strings.TrimPrefix(result.LogoPath, productImageURLPrefix)
+	if _, err := os.Stat(filepath.Join(cfg.productImageDir, oldName)); err != nil {
+		t.Fatalf("logo image missing: %v", err)
+	}
+	if response := logoRequest(e, path, png, testOrigin, cookie); response.Code != http.StatusOK {
+		t.Fatalf("logo replacement returned %d: %s", response.Code, response.Body.String())
+	}
+	if _, err := os.Stat(filepath.Join(cfg.productImageDir, oldName)); !os.IsNotExist(err) {
+		t.Fatalf("old logo was not removed: %v", err)
+	}
+}
+
 func TestSessionLifecycle(t *testing.T) {
 	db, e, _, _ := newAuthTestServer(t)
 	cookie := loginCookie(t, e)
@@ -123,6 +184,72 @@ func TestSessionLifecycle(t *testing.T) {
 	}
 	if response := request(e, http.MethodGet, "/api/me", "", "", cookie); response.Code != http.StatusUnauthorized {
 		t.Fatalf("logged-out session returned %d", response.Code)
+	}
+}
+
+func TestPasswordFirstAuthentication(t *testing.T) {
+	db, e, _, admin := newAuthTestServer(t)
+	if err := db.Model(&admin).Update("mobile", "09121234567").Error; err != nil {
+		t.Fatal(err)
+	}
+
+	for _, identifier := range []string{"0912 123 4567", "admin"} {
+		response := request(e, http.MethodPost, "/api/auth/identify", fmt.Sprintf(`{"identifier":%q}`, identifier), testOrigin, nil)
+		if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"next":"password"`) {
+			t.Fatalf("identify %q = %d: %s", identifier, response.Code, response.Body.String())
+		}
+	}
+	response := request(e, http.MethodPost, "/api/auth/password", `{"identifier":"09121234567","password":"test-password"}`, testOrigin, nil)
+	if response.Code != http.StatusNoContent || len(response.Result().Cookies()) == 0 {
+		t.Fatalf("mobile password login = %d: %s", response.Code, response.Body.String())
+	}
+	if response := request(e, http.MethodPost, "/api/auth/identify", `{"identifier":"missing-user"}`, testOrigin, nil); response.Code != http.StatusNotFound {
+		t.Fatalf("unknown username = %d", response.Code)
+	}
+	if response := request(e, http.MethodPost, "/api/auth/password/reset", `{"mobile":"09129999999"}`, testOrigin, nil); response.Code != http.StatusNoContent {
+		t.Fatalf("unknown mobile reset = %d: %s", response.Code, response.Body.String())
+	}
+	var challenges int64
+	if err := db.Model(&OTPChallenge{}).Count(&challenges).Error; err != nil || challenges != 0 {
+		t.Fatalf("unknown reset created %d challenges: %v", challenges, err)
+	}
+}
+
+func TestSignupOTPStoresPassword(t *testing.T) {
+	db, e, _, _ := newAuthTestServer(t)
+	code := "123456"
+	hash, err := bcrypt.GenerateFromPassword([]byte(code), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&OTPChallenge{Mobile: "09121111111", Purpose: challengeSignup, CodeHash: string(hash), SentAt: time.Now(), ExpiresAt: time.Now().Add(time.Minute)}).Error; err != nil {
+		t.Fatal(err)
+	}
+	response := request(e, http.MethodPost, "/api/auth/signup/verify", `{"mobile":"09121111111","code":"123456","password":"new-password"}`, testOrigin, nil)
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("signup verify = %d: %s", response.Code, response.Body.String())
+	}
+	var admin Admin
+	if err := db.Where("mobile = ?", "09121111111").First(&admin).Error; err != nil {
+		t.Fatal(err)
+	}
+	if bcrypt.CompareHashAndPassword([]byte(admin.PasswordHash), []byte("new-password")) != nil {
+		t.Fatal("signup password was not stored")
+	}
+}
+
+func TestDevOTPCodeSkipsSMS(t *testing.T) {
+	db, _, cfg, _ := newAuthTestServer(t)
+	cfg.devOTPCode = "123456"
+	if err := issueChallenge(db, cfg, "09123333333", challengeSignup); err != nil {
+		t.Fatal(err)
+	}
+	var challenge OTPChallenge
+	if err := db.First(&challenge).Error; err != nil {
+		t.Fatal(err)
+	}
+	if bcrypt.CompareHashAndPassword([]byte(challenge.CodeHash), []byte(cfg.devOTPCode)) != nil {
+		t.Fatal("development OTP code was not stored as the challenge")
 	}
 }
 

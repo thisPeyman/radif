@@ -166,31 +166,60 @@ func me(db *gorm.DB) echo.HandlerFunc {
 			return err
 		}
 
-		type publicShop struct {
-			ID                   uint                  `json:"id"`
-			Name                 string                `json:"name"`
-			LogoPath             string                `json:"logoPath,omitempty"`
-			ShortDescription     string                `json:"shortDescription,omitempty"`
-			InstagramUsername    string                `json:"instagramUsername,omitempty"`
-			WhatsAppNumber       string                `json:"whatsappNumber,omitempty"`
-			SupportChannel       string                `json:"supportChannel,omitempty"`
-			ShareMessageTemplate string                `json:"shareMessageTemplate,omitempty"`
-			PaymentCards         []paymentCardResponse `json:"paymentCards"`
-		}
 		responseShops := make([]publicShop, len(shops))
 		for i, shop := range shops {
 			cards := make([]paymentCardResponse, len(shop.PaymentCards))
 			for j, card := range shop.PaymentCards {
 				cards[j] = paymentCardResponse{ID: card.ID, CardNumber: card.CardNumber, IBAN: card.IBAN, PaymentInstructions: card.PaymentInstructions, Active: card.CardNumber == shop.PaymentCardNumber}
 			}
-			responseShops[i] = publicShop{shop.ID, shop.Name, shop.LogoPath, shop.ShortDescription, shop.InstagramUsername, shop.WhatsAppNumber, shop.SupportChannel, shop.ShareMessageTemplate, cards}
+			responseShops[i] = shopResponseWithCards(shop, cards)
 		}
 
 		return c.JSON(http.StatusOK, map[string]any{
-			"admin": map[string]any{"id": admin.ID, "name": admin.Name, "login": admin.Login},
+			"admin": map[string]any{"id": admin.ID, "name": admin.Name, "login": admin.Login, "mobile": admin.Mobile},
 			"shops": responseShops,
 		})
 	}
+}
+
+type publicShop struct {
+	ID                   uint                  `json:"id"`
+	Name                 string                `json:"name"`
+	LogoPath             string                `json:"logoPath,omitempty"`
+	ShortDescription     string                `json:"shortDescription,omitempty"`
+	InstagramUsername    string                `json:"instagramUsername,omitempty"`
+	WhatsAppNumber       string                `json:"whatsappNumber,omitempty"`
+	SupportChannel       string                `json:"supportChannel,omitempty"`
+	ShareMessageTemplate string                `json:"shareMessageTemplate,omitempty"`
+	PaymentCards         []paymentCardResponse `json:"paymentCards"`
+	SubscriptionState    string                `json:"subscriptionState"`
+	TrialEndsAt          *time.Time            `json:"trialEndsAt,omitempty"`
+	PaidThrough          *time.Time            `json:"paidThrough,omitempty"`
+	TrialDaysRemaining   int                   `json:"trialDaysRemaining,omitempty"`
+}
+
+func shopResponse(shop Shop) publicShop {
+	return shopResponseWithCards(shop, []paymentCardResponse{{ID: 1, CardNumber: shop.PaymentCardNumber, IBAN: shop.PaymentIBAN, PaymentInstructions: shop.PaymentInstructions, Active: true}})
+}
+func shopResponseWithCards(shop Shop, cards []paymentCardResponse) publicShop {
+	state, days := shopSubscription(shop, time.Now())
+	return publicShop{ID: shop.ID, Name: shop.Name, LogoPath: shop.LogoPath, ShortDescription: shop.ShortDescription, InstagramUsername: shop.InstagramUsername, WhatsAppNumber: shop.WhatsAppNumber, SupportChannel: shop.SupportChannel, ShareMessageTemplate: shop.ShareMessageTemplate, PaymentCards: cards, SubscriptionState: state, TrialEndsAt: shop.TrialEndsAt, PaidThrough: shop.PaidThrough, TrialDaysRemaining: days}
+}
+
+func createSession(db *gorm.DB, cfg config, c echo.Context, admin Admin) error {
+	if err := db.Where("expires_at <= ?", time.Now()).Delete(&Session{}).Error; err != nil {
+		return err
+	}
+	token, err := newOpaqueToken()
+	if err != nil {
+		return err
+	}
+	expiresAt := time.Now().Add(cfg.sessionLifetime)
+	if err := db.Create(&Session{TokenHash: hashToken(token), AdminID: admin.ID, ExpiresAt: expiresAt}).Error; err != nil {
+		return err
+	}
+	setSessionCookie(c, token, expiresAt, cfg)
+	return nil
 }
 
 func updateShopSupport(db *gorm.DB) echo.HandlerFunc {
@@ -247,6 +276,40 @@ func updateShopSupport(db *gorm.DB) echo.HandlerFunc {
 			"supportChannel":       channel,
 			"shareMessageTemplate": template,
 		})
+	}
+}
+
+func updateShopLogo(db *gorm.DB, cfg config) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		c.Request().Body = http.MaxBytesReader(c.Response(), c.Request().Body, maxProductImageBytes+(1<<20))
+		if err := c.Request().ParseMultipartForm(1 << 20); err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "تصویر لوگو معتبر نیست.")
+		}
+		defer c.Request().MultipartForm.RemoveAll()
+		if len(c.Request().MultipartForm.Value) != 0 || len(c.Request().MultipartForm.File) != 1 {
+			return echo.NewHTTPError(http.StatusBadRequest, "یک تصویر برای لوگو انتخاب کنید.")
+		}
+		files := c.Request().MultipartForm.File["image"]
+		if len(files) != 1 {
+			return echo.NewHTTPError(http.StatusBadRequest, "یک تصویر برای لوگو انتخاب کنید.")
+		}
+		image, err := prepareImage(productImageDir(cfg), maxProductImageBytes, files[0], "logo")
+		if err != nil {
+			return err
+		}
+		defer func() { image.discard() }()
+		shop := c.Get(shopContextKey).(*Shop)
+		if err := image.commit(); err != nil {
+			return err
+		}
+		logoPath := productImageURLPrefix + image.storedName
+		oldLogoPath := shop.LogoPath
+		if err := db.Model(shop).Update("logo_path", logoPath).Error; err != nil {
+			return err
+		}
+		removeProductImage(cfg, oldLogoPath)
+		image = nil
+		return c.JSON(http.StatusOK, map[string]string{"logoPath": logoPath})
 	}
 }
 

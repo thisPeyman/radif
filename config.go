@@ -11,12 +11,16 @@ import (
 )
 
 type config struct {
-	appOrigin       string
-	sessionLifetime time.Duration
-	secureCookies   bool
-	receiptDir      string
-	productImageDir string
-	maxReceiptBytes int64
+	appOrigin           string
+	sessionLifetime     time.Duration
+	secureCookies       bool
+	receiptDir          string
+	productImageDir     string
+	maxReceiptBytes     int64
+	melipayamakUsername string
+	melipayamakPassword string
+	melipayamakBodyID   string
+	devOTPCode          string
 }
 
 func dataDir() string {
@@ -60,12 +64,19 @@ func loadConfig() (config, error) {
 		}
 	}
 
+	devOTPCode := os.Getenv("DEV_OTP_CODE")
+	if devOTPCode != "" && len(normalizeDigits(devOTPCode)) != 6 {
+		return config{}, fmt.Errorf("DEV_OTP_CODE must be six digits")
+	}
+
 	return config{
-		appOrigin:       origin,
-		sessionLifetime: lifetime,
-		secureCookies:   secureCookies,
-		receiptDir:      filepath.Join(dataDir(), "receipts"),
-		productImageDir: filepath.Join(dataDir(), "product-images"),
-		maxReceiptBytes: maxReceiptBytes,
+		appOrigin:           origin,
+		sessionLifetime:     lifetime,
+		secureCookies:       secureCookies,
+		receiptDir:          filepath.Join(dataDir(), "receipts"),
+		productImageDir:     filepath.Join(dataDir(), "product-images"),
+		maxReceiptBytes:     maxReceiptBytes,
+		melipayamakUsername: os.Getenv("MELIPAYAMAK_USERNAME"), melipayamakPassword: os.Getenv("MELIPAYAMAK_PASSWORD"), melipayamakBodyID: os.Getenv("MELIPAYAMAK_BODY_ID"),
+		devOTPCode: normalizeDigits(devOTPCode),
 	}, nil
 }

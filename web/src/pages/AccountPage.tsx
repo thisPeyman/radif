@@ -1,7 +1,8 @@
-import { Check, CircleCheck, CreditCard, LoaderCircle, LogOut, Pencil, Plus, X } from "lucide-react";
+import { Check, CircleCheck, CreditCard, ImagePlus, LoaderCircle, LogOut, Pencil, Plus, X } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { ErrorNotice } from "../components";
-import { api, defaultShareMessageTemplate, persianNumber, type Me, type PaymentCard, type Shop } from "../shared";
+import { ImageEditor } from "./ProductFormPage";
+import { api, defaultShareMessageTemplate, persianDate, persianNumber, type Me, type PaymentCard, type Shop } from "../shared";
 
 function formatCardNumber(value: string) {
   return value.match(/.{1,4}/g)?.join(" ") ?? value;
@@ -21,6 +22,10 @@ export default function AccountPage({ me, shop, onShopUpdated, onLogout }: {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
+  const [logoSaving, setLogoSaving] = useState(false);
+  const [logoCropping, setLogoCropping] = useState(false);
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoError, setLogoError] = useState("");
   const [cardPending, setCardPending] = useState("");
   const [cardError, setCardError] = useState("");
   const [cardNumber, setCardNumber] = useState("");
@@ -41,6 +46,10 @@ export default function AccountPage({ me, shop, onShopUpdated, onLogout }: {
     setSupportChannel(shop.supportChannel ?? "");
     setShareMessageTemplate(shop.shareMessageTemplate ?? "");
     setSaved(false);
+    setLogoSaving(false);
+    setLogoCropping(false);
+    setLogoFile(null);
+    setLogoError("");
     setError("");
     setCardError("");
     setCardNumber("");
@@ -141,6 +150,24 @@ export default function AccountPage({ me, shop, onShopUpdated, onLogout }: {
     }
   }
 
+  async function saveLogo(event: FormEvent) {
+    event.preventDefault();
+    if (!logoFile || logoSaving || saving || cardPending) return;
+    setLogoSaving(true);
+    setLogoError("");
+    try {
+      const body = new FormData();
+      body.append("image", logoFile);
+      const result = await api<{ logoPath: string }>(`/api/shops/${shop.id}/logo`, { method: "PATCH", body });
+      onShopUpdated({ ...shop, logoPath: result.logoPath });
+      setLogoFile(null);
+    } catch (reason) {
+      setLogoError(reason instanceof Error ? reason.message : "لوگو ذخیره نشد.");
+    } finally {
+      setLogoSaving(false);
+    }
+  }
+
   async function logout() {
     setPending(true);
     setError("");
@@ -164,7 +191,20 @@ export default function AccountPage({ me, shop, onShopUpdated, onLogout }: {
         <div className="my-5 h-px bg-ledger" />
         <p className="text-xs font-bold text-ink/70">فروشگاه‌های فعال</p>
         <p className="mt-1 font-bold">{persianNumber(me.shops.length)} فروشگاه</p>
+        <div className="my-5 h-px bg-ledger" />
+        <p className="text-xs font-bold text-ink/70">وضعیت دسترسی</p>
+        <p className="mt-1 font-bold">{shop.subscriptionState === "paid" ? shop.paidThrough ? `فعال تا ${persianDate(shop.paidThrough)}` : "دسترسی فعال" : shop.subscriptionState === "trial" ? `آزمایشی تا ${shop.trialEndsAt ? persianDate(shop.trialEndsAt) : ""}` : "نیازمند فعال‌سازی"}</p>
       </div>
+      <form className="mt-5 rounded-3xl border border-ledger bg-white p-5 shadow-sm" onSubmit={saveLogo}>
+        <h2 className="font-black">لوگوی فروشگاه</h2>
+        <p className="mt-1 text-sm leading-7 text-ink/65">در لینک سفارش مشتری نمایش داده می‌شود.</p>
+        <div className="mt-4"><ImageEditor existing={shop.logoPath} file={logoFile} onChange={(file) => { setLogoFile(file); setLogoError(""); }} onCroppingChange={setLogoCropping} /></div>
+        <button className="primary-button mt-4 w-full" type="submit" disabled={!logoFile || logoCropping || logoSaving || saving || cardPending !== ""}>
+          {logoSaving ? <LoaderCircle className="size-5 animate-spin" /> : <ImagePlus className="size-5" />}
+          {logoSaving ? "در حال ذخیره…" : "ذخیره لوگو"}
+        </button>
+        {logoError && <div className="mt-4"><ErrorNotice>{logoError}</ErrorNotice></div>}
+      </form>
       <section className="mt-5 rounded-3xl border border-ledger bg-white p-5 shadow-sm">
         <div className="flex items-start gap-3">
           <span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-saffron/15 text-ink"><CreditCard className="size-5" aria-hidden="true" /></span>
@@ -300,7 +340,7 @@ export default function AccountPage({ me, shop, onShopUpdated, onLogout }: {
         </button>
       </form>
       {error && <div className="mt-4"><ErrorNotice>{error}</ErrorNotice></div>}
-      <button className="secondary-button mt-6 w-full text-error" type="button" onClick={logout} disabled={pending}>
+      <button className="secondary-button mt-6 w-full text-error" type="button" data-allow-inactive onClick={logout} disabled={pending}>
         {pending ? <LoaderCircle className="size-5 animate-spin" /> : <LogOut className="size-5" />}
         {pending ? "در حال خروج…" : "خروج از حساب"}
       </button>

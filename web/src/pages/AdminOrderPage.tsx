@@ -133,7 +133,7 @@ export default function AdminOrderPage({ shops }: { shops: Shop[] }) {
   }
 
   function finalPaymentMessage(value: AdminOrder) {
-    return `سلام، لطفاً باقی‌مانده سفارش ${value.orderCode} به مبلغ ${persianNumber(value.finalPaymentAmount ?? 0)} تومان را پرداخت کنید و تصویر رسید را از لینک زیر بفرستید:\n${value.customerUrl}`;
+    return `مرسی که ${value.shop.name} رو انتخاب کردین 🤍\nسفارش شما با کد ${value.orderCode} آماده تکمیل پرداخت است ✨\n\nبرای پرداخت باقی‌مانده مبلغ ${persianNumber(value.finalPaymentAmount ?? 0)} تومان، از لینک زیر وارد صفحه سفارشتون بشین 👇\n${value.customerUrl}\n\nاطلاعات پرداخت داخل همون صفحه در دسترستونه و بعد از واریز می‌تونین تصویر رسید پرداخت رو هم همون‌جا ارسال کنین.\n\nمرسی از اعتمادتون 🤍`;
   }
 
   async function copyFinalPaymentMessage(value = order) {

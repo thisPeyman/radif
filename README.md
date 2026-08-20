@@ -18,6 +18,12 @@ npm --prefix web ci
 APP_ORIGIN=http://localhost:5173 make dev
 ```
 
+To try signup or password reset without an SMS provider, use a fixed local-only OTP:
+
+```sh
+DEV_OTP_CODE=123456 APP_ORIGIN=http://localhost:5173 make dev
+```
+
 رابط توسعه روی `http://localhost:5173` اجرا می‌شود و درخواست‌های `/api` را به سرور Go روی پورت `8080` می‌فرستد.
 
 ## پایگاه داده و داده آزمایشی

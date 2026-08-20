@@ -2,7 +2,7 @@ import { ChartColumn, ChevronDown, ClipboardList, Download, Package, Plus, Store
 import { lazy, Suspense, useState } from "react";
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router";
 import { LoadingScreen } from "./components";
-import { api, type BeforeInstallPromptEvent, type Me, type Shop } from "./shared";
+import { api, persianNumber, type BeforeInstallPromptEvent, type Me, type Shop } from "./shared";
 
 const OrdersPage = lazy(() => import("./pages/OrdersPage"));
 const CreateOrderPage = lazy(() => import("./pages/CreateOrderPage"));
@@ -124,6 +124,7 @@ export default function AdminApp({ me, installPrompt, onInstallDone, onShopUpdat
   const savedID = Number(localStorage.getItem("radif_shop_id"));
   const [shopID, setShopID] = useState(me.shops.some((shop) => shop.id === savedID) ? savedID : me.shops[0]?.id);
   const [creating, setCreating] = useState(false);
+  const [readOnlyMessage, setReadOnlyMessage] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -164,7 +165,9 @@ export default function AdminApp({ me, installPrompt, onInstallDone, onShopUpdat
   return (
     <div className="app-viewport relative min-h-dvh text-ink sm:min-h-[760px]">
       <ShopSwitcher shops={me.shops} selected={selected} onChange={changeShop} disabled={creating} />
-      <main className="pb-[calc(5.5rem+env(safe-area-inset-bottom))]">
+      {selected.subscriptionState === "inactive" ? <aside className="mx-5 mt-4 rounded-2xl bg-error/10 p-3 text-sm font-bold text-error">دوره آزمایشی تمام شده. <a className="underline underline-offset-4" href="https://wa.me/989362507047" target="_blank" rel="noreferrer">فعال‌سازی در واتساپ</a></aside> : selected.subscriptionState === "trial" ? <aside className="mx-5 mt-4 rounded-2xl bg-saffron/15 p-3 text-sm font-bold text-ink">{persianNumber(selected.trialDaysRemaining ?? 0)} روز تا پایان دوره‌ی آزمایشی.</aside> : null}
+      {readOnlyMessage && <p className="mx-5 mt-3 text-center text-sm font-bold text-error">برای انجام تغییرات، دسترسی فروشگاه را از واتساپ فعال کنید.</p>}
+      <main className="pb-[calc(5.5rem+env(safe-area-inset-bottom))]" onSubmitCapture={(event) => { if (selected.subscriptionState === "inactive") { event.preventDefault(); setReadOnlyMessage(true); } }} onClickCapture={(event) => { const button = (event.target as HTMLElement).closest("button"); if (selected.subscriptionState === "inactive" && button && !button.hasAttribute("data-allow-inactive")) { event.preventDefault(); event.stopPropagation(); setReadOnlyMessage(true); } }}>
         <Suspense fallback={<LoadingScreen />}>
           <Routes>
             <Route path="/orders" element={<OrdersPage shop={selected} />} />

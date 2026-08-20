@@ -14,7 +14,7 @@ function loadImage(source: string) {
   });
 }
 
-async function cropProductImage(source: string, area: Area) {
+async function cropImage(source: string, area: Area) {
   const image = await loadImage(source);
   const canvas = document.createElement("canvas");
   canvas.width = 1200;
@@ -27,7 +27,7 @@ async function cropProductImage(source: string, area: Area) {
   return new File([blob], "product.webp", { type: "image/webp" });
 }
 
-function ProductImageEditor({ existing, file, onChange, onCroppingChange }: {
+export function ImageEditor({ existing, file, onChange, onCroppingChange }: {
   existing?: string;
   file: File | null;
   onChange: (file: File | null) => void;
@@ -70,7 +70,7 @@ function ProductImageEditor({ existing, file, onChange, onCroppingChange }: {
     setWorking(true);
     setError("");
     try {
-      onChange(await cropProductImage(source, area));
+      onChange(await cropImage(source, area));
       URL.revokeObjectURL(source);
       setSource("");
       if (input.current) input.current.value = "";
@@ -120,7 +120,7 @@ function ProductImageEditor({ existing, file, onChange, onCroppingChange }: {
         </div>
       ) : (preview || existing) ? (
         <div className="product-image-preview">
-          <img src={preview || existing} alt="پیش‌نمایش تصویر محصول" />
+          <img src={preview || existing} alt="پیش‌نمایش تصویر" />
           <div className="p-3">
             <button className="secondary-button w-full" type="button" onClick={() => input.current?.click()}>
               <ImagePlus className="size-5" />
@@ -132,7 +132,7 @@ function ProductImageEditor({ existing, file, onChange, onCroppingChange }: {
       ) : (
         <button className="product-image-empty" type="button" onClick={() => input.current?.click()}>
           <span className="grid size-12 place-items-center rounded-2xl bg-teal text-white"><ImagePlus className="size-6" /></span>
-          <span><strong className="block">انتخاب و برش تصویر</strong><small className="mt-1 block text-ink/65">خروجی مربع و مناسب نمایش محصول است</small></span>
+          <span><strong className="block">انتخاب و برش تصویر</strong><small className="mt-1 block text-ink/65">خروجی مربع و مناسب نمایش است</small></span>
         </button>
       )}
       {error && <p className="mt-2 text-sm font-bold text-error" role="alert">{error}</p>}
@@ -221,7 +221,7 @@ export default function ProductFormPage({ shop, mode }: { shop: Shop; mode: "cre
       <p className="page-kicker">{shop.name}</p>
       <h1 className="page-title">{mode === "create" ? "محصول تازه" : "ویرایش محصول"}</h1>
       <p className="mt-2 text-sm leading-7 text-ink/65">تصویر مربع در سفارش مدیر و صفحه مشتری نمایش داده می‌شود.</p>
-      <div className="mt-7"><ProductImageEditor existing={product?.imagePath} file={image} onChange={setImage} onCroppingChange={setCropping} /></div>
+      <div className="mt-7"><ImageEditor existing={product?.imagePath} file={image} onChange={setImage} onCroppingChange={setCropping} /></div>
       <div className="mt-7 space-y-5">
         <label className="block" htmlFor="product-name">
           <span className="mb-2 block text-sm font-black">نام محصول</span>

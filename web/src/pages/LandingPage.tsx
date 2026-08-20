@@ -17,10 +17,7 @@ export default function LandingPage() {
             <h1>فروش در دایرکت؛<br />سفارش در <span>ردیف</span></h1>
             <p className="landing-lead">بعد از قطعی‌شدن خرید، سفارش را بساز، لینک را در دایرکت بفرست و آدرس، رسید و وضعیت ارسال را یک‌جا نگه دار.</p>
             <div className="landing-actions">
-              <a className="landing-pilot-button" href="https://wa.me/989362507047" target="_blank" rel="noreferrer" aria-describedby="pilot-status">
-                <MessageCircle className="size-5" aria-hidden="true" />
-                درخواست پایلوت در واتساپ
-              </a>
+              <NavLink className="landing-pilot-button" to="/login" aria-describedby="pilot-status">شروع آزمایشی رایگان ۱۴ روزه</NavLink>
               <a className="landing-text-link" href="#how-it-works">
                 دیدن روند کار
                 <ArrowLeft className="size-4" aria-hidden="true" />
@@ -133,10 +130,7 @@ export default function LandingPage() {
             </div>
           </div>
           <div className="landing-cta-action">
-            <a className="landing-pilot-button" href="https://wa.me/989362507047" target="_blank" rel="noreferrer">
-              <MessageCircle className="size-5" aria-hidden="true" />
-              درخواست پایلوت در واتساپ
-            </a>
+            <NavLink className="landing-pilot-button" to="/login">شروع آزمایشی رایگان ۱۴ روزه</NavLink>
             <span>دسترسی آزمایشی ۱۴ روزه برای تعداد محدودی فروشگاه</span>
           </div>
         </section>

@@ -43,6 +43,9 @@ func lockedActiveShop(tx *gorm.DB, adminID, shopID uint) (Shop, error) {
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return Shop{}, echo.NewHTTPError(http.StatusNotFound, "محصول پیدا نشد.")
 	}
+	if err == nil && !shopWritable(shop) {
+		return Shop{}, echo.NewHTTPError(http.StatusPaymentRequired, "دوره دسترسی این فروشگاه تمام شده است. برای فعال‌سازی در واتساپ پیام دهید.")
+	}
 	return shop, err
 }
 
