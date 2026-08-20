@@ -56,6 +56,7 @@ func newAuthTestServer(t *testing.T) (*gorm.DB, *echo.Echo, config, Admin) {
 	cfg := config{
 		appOrigin: testOrigin, sessionLifetime: time.Hour, secureCookies: true,
 		receiptDir: filepath.Join(testDir, "receipts"), productImageDir: filepath.Join(testDir, "product-images"), maxReceiptBytes: 1 << 20,
+		devOTPCode: "123456",
 	}
 	return db, newServer(db, cfg), cfg, admin
 }

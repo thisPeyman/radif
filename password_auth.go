@@ -62,9 +62,13 @@ func identifyAccount(db *gorm.DB, cfg config, limiter *loginLimiter) echo.Handle
 			return echo.NewHTTPError(http.StatusTooManyRequests, "کمی بعد دوباره تلاش کنید.")
 		}
 		var input struct {
-			Identifier string `json:"identifier"`
+			Identifier   string `json:"identifier"`
+			CaptchaToken string `json:"captchaToken"`
 		}
 		if err := decodeAuthInput(c, &input); err != nil {
+			return err
+		}
+		if err := verifyHCaptcha(c, cfg, input.CaptchaToken); err != nil {
 			return err
 		}
 		identifier := strings.TrimSpace(input.Identifier)
@@ -102,10 +106,14 @@ func passwordLogin(db *gorm.DB, cfg config, limiter *loginLimiter) echo.HandlerF
 			return echo.NewHTTPError(http.StatusTooManyRequests, "تعداد تلاش‌ها بیش از حد مجاز است. کمی بعد دوباره تلاش کنید.")
 		}
 		var input struct {
-			Identifier string `json:"identifier"`
-			Password   string `json:"password"`
+			Identifier   string `json:"identifier"`
+			Password     string `json:"password"`
+			CaptchaToken string `json:"captchaToken"`
 		}
 		if err := decodeAuthInput(c, &input); err != nil {
+			return err
+		}
+		if err := verifyHCaptcha(c, cfg, input.CaptchaToken); err != nil {
 			return err
 		}
 		identifier := strings.TrimSpace(input.Identifier)
@@ -209,9 +217,13 @@ func requestPasswordReset(db *gorm.DB, cfg config, limiter *loginLimiter) echo.H
 			return echo.NewHTTPError(http.StatusTooManyRequests, "کمی بعد دوباره تلاش کنید.")
 		}
 		var input struct {
-			Mobile string `json:"mobile"`
+			Mobile       string `json:"mobile"`
+			CaptchaToken string `json:"captchaToken"`
 		}
 		if err := decodeAuthInput(c, &input); err != nil {
+			return err
+		}
+		if err := verifyHCaptcha(c, cfg, input.CaptchaToken); err != nil {
 			return err
 		}
 		mobile := validIranianMobile(input.Mobile)

@@ -95,12 +95,16 @@ func login(db *gorm.DB, cfg config, limiter *loginLimiter) echo.HandlerFunc {
 		}
 
 		var input struct {
-			Login    string `json:"login"`
-			Password string `json:"password"`
+			Login        string `json:"login"`
+			Password     string `json:"password"`
+			CaptchaToken string `json:"captchaToken"`
 		}
 		c.Request().Body = http.MaxBytesReader(c.Response(), c.Request().Body, 16<<10)
 		if err := json.NewDecoder(c.Request().Body).Decode(&input); err != nil {
 			return echo.NewHTTPError(http.StatusBadRequest, "اطلاعات ورود معتبر نیست.")
+		}
+		if err := verifyHCaptcha(c, cfg, input.CaptchaToken); err != nil {
+			return err
 		}
 		input.Login = strings.TrimSpace(input.Login)
 		if input.Login == "" || input.Password == "" {

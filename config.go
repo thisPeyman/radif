@@ -21,6 +21,9 @@ type config struct {
 	melipayamakPassword string
 	melipayamakBodyID   string
 	devOTPCode          string
+	hCaptchaSiteKey     string
+	hCaptchaSecret      string
+	hCaptchaVerifyURL   string
 }
 
 func dataDir() string {
@@ -68,6 +71,13 @@ func loadConfig() (config, error) {
 	if devOTPCode != "" && len(normalizeDigits(devOTPCode)) != 6 {
 		return config{}, fmt.Errorf("DEV_OTP_CODE must be six digits")
 	}
+	hCaptchaSiteKey, hCaptchaSecret := strings.TrimSpace(os.Getenv("HCAPTCHA_SITE_KEY")), strings.TrimSpace(os.Getenv("HCAPTCHA_SECRET"))
+	if devOTPCode == "" && (hCaptchaSiteKey == "" || hCaptchaSecret == "") {
+		return config{}, fmt.Errorf("HCAPTCHA_SITE_KEY and HCAPTCHA_SECRET are required unless DEV_OTP_CODE is set")
+	}
+	if (hCaptchaSiteKey == "") != (hCaptchaSecret == "") {
+		return config{}, fmt.Errorf("HCAPTCHA_SITE_KEY and HCAPTCHA_SECRET must be set together")
+	}
 
 	return config{
 		appOrigin:           origin,
@@ -77,6 +87,7 @@ func loadConfig() (config, error) {
 		productImageDir:     filepath.Join(dataDir(), "product-images"),
 		maxReceiptBytes:     maxReceiptBytes,
 		melipayamakUsername: os.Getenv("MELIPAYAMAK_USERNAME"), melipayamakPassword: os.Getenv("MELIPAYAMAK_PASSWORD"), melipayamakBodyID: os.Getenv("MELIPAYAMAK_BODY_ID"),
-		devOTPCode: normalizeDigits(devOTPCode),
+		devOTPCode:      normalizeDigits(devOTPCode),
+		hCaptchaSiteKey: hCaptchaSiteKey, hCaptchaSecret: hCaptchaSecret, hCaptchaVerifyURL: "https://api.hcaptcha.com/siteverify",
 	}, nil
 }

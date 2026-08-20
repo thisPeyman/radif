@@ -114,7 +114,7 @@ func newServer(db *gorm.DB, cfg config) *echo.Echo {
 	e.Use(middleware.SecureWithConfig(middleware.SecureConfig{
 		ContentTypeNosniff:    "nosniff",
 		XFrameOptions:         "DENY",
-		ContentSecurityPolicy: "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self'",
+		ContentSecurityPolicy: "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' https://hcaptcha.com https://*.hcaptcha.com; style-src 'self' https://hcaptcha.com https://*.hcaptcha.com; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://hcaptcha.com https://*.hcaptcha.com; frame-src https://hcaptcha.com https://*.hcaptcha.com",
 		ReferrerPolicy:        "no-referrer",
 	}))
 
@@ -132,6 +132,7 @@ func newServer(db *gorm.DB, cfg config) *echo.Echo {
 	})
 	limiter := newLoginLimiter()
 	origin := requireOrigin(cfg.appOrigin)
+	e.GET("/api/auth/captcha", captchaConfig(cfg))
 	e.POST("/api/auth/identify", identifyAccount(db, cfg, limiter), origin)
 	e.POST("/api/auth/password", passwordLogin(db, cfg, limiter), origin)
 	e.POST("/api/auth/signup/verify", signupVerify(db, cfg, limiter), origin)

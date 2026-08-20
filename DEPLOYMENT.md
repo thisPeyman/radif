@@ -89,9 +89,12 @@ MAX_RECEIPT_BYTES=5242880
 MELIPAYAMAK_USERNAME=your-panel-username
 MELIPAYAMAK_PASSWORD=your-panel-password
 MELIPAYAMAK_BODY_ID=your-template-body-id
+HCAPTCHA_SITE_KEY=your-public-site-key
+HCAPTCHA_SECRET=your-secret-key
 ```
 
 Use the actual server IP and the values returned by `id`. Keep `.env` mode `0600` and never commit or upload it elsewhere.
+Create the hCaptcha site key with this server's hostname in its domain allowlist, then keep only `HCAPTCHA_SECRET` private.
 
 ## Activate a paid shop
 
