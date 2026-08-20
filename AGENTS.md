@@ -11,6 +11,7 @@
 - The backend is one root Go module/package (`package main`). `main.go:run` opens PostgreSQL, applies embedded Goose migrations, starts stale-order cleanup, and serves Echo on `:8080`; `seed` is the only subcommand.
 - `main.go:newServer` is the API route index. Handlers receive `*gorm.DB` directly; there is no repository/service layer.
 - `web/` is a separate Vite/React package. Entry: `web/index.html` -> `web/src/main.tsx` -> `web/src/App.tsx` -> `web/src/AdminApp.tsx` for authenticated routes.
+- For frontend work, use the `frontend-design` skill.
 - Production is one Go process serving `/api/*` and the SPA from relative `web/dist`; run local binaries from the repository root.
 
 ## Feature Lookup
